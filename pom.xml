@@ -31,6 +31,8 @@
         <os.plugin.version>1.5.0.Final</os.plugin.version>
         <protobuf.plugin.version>0.5.0</protobuf.plugin.version>
         <protoc.version>3.5.1</protoc.version>
+        <dockerfile-maven-version>1.4.0</dockerfile-maven-version>
+        <docker.image.prefix>crafts</docker.image.prefix>
     </properties>
     <modules>
         <module>simple-grpc-server</module>
@@ -39,7 +41,7 @@
         <module>rxjava-example</module>
         <module>chat-example</module>
         <module>metadata-context-example</module>
-        <module>zipkin-prometheus-example</module>
+        <!--<module>zipkin-prometheus-example</module>-->
         <module>springboot-example</module>
         <module>jpa-example</module>
         <module>kubernetes-lb-example</module>
@@ -66,6 +68,13 @@
             <groupId>com.datastax.cassandra</groupId>
             <artifactId>cassandra-driver-core</artifactId>
             <version>3.5.1</version>
+            <classifier>shaded</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 
@@ -102,7 +111,6 @@
                             <manifest>
                                 <addClasspath>true</addClasspath>
                                 <classpathPrefix>lib/</classpathPrefix>
-                                <mainClass>${main.class}</mainClass>
                             </manifest>
                         </archive>
                     </configuration>
@@ -126,7 +134,7 @@
                 <plugin>
                     <groupId>com.spotify</groupId>
                     <artifactId>dockerfile-maven-plugin</artifactId>
-                    <version>1.2.2</version>
+                    <version>${dockerfile-maven-version}</version>
                     <configuration>
                         <repository>${docker.image.prefix}/${project.artifactId}</repository>
                         <tag>latest</tag>

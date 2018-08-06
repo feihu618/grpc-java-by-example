@@ -16,6 +16,10 @@
 
 package com.example.grpc.server;
 
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Session;
 import com.example.grpc.GreetingServiceGrpc;
 import com.example.grpc.HelloRequest;
 import com.example.grpc.HelloResponse;
@@ -25,6 +29,8 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetSocketAddress;
 
 /**
  * Created by rayt on 5/16/16.
@@ -34,13 +40,38 @@ public class MyGrpcServer {
     Server server = ServerBuilder.forPort(8080)
         .addService(new GreetingServiceImpl()).build();
 
+      initCassandra();
+
+
     System.out.println("Starting server...");
     server.start();
     System.out.println("Server started!");
     server.awaitTermination();
   }
 
-  public static class GreetingServiceImpl extends GreetingServiceGrpc.GreetingServiceImplBase {
+    private static void initCassandra() {
+
+        Cluster cluster = null;
+        try {
+            cluster = Cluster.builder()
+                    .addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042))
+                    .build();
+
+            Session session = cluster.connect();
+
+            ResultSet rs = session.execute("select release_version from system.local");
+            Row row = rs.one();
+
+        } catch (Throwable e){
+
+            e.printStackTrace();
+        }finally {
+            if (cluster != null) cluster.close();
+        }
+
+    }
+
+    public static class GreetingServiceImpl extends GreetingServiceGrpc.GreetingServiceImplBase {
     @Override
     public void greeting(HelloRequest request, StreamObserver<HelloResponse> responseObserver) {
       System.out.println(request);
