@@ -17,7 +17,6 @@
 package com.example.grpc.server;
 
 
-
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.Session;
@@ -27,8 +26,8 @@ import com.datastax.driver.core.policies.TokenAwarePolicy;
 import java.util.Map;
 
 /**
-  * Set up a Casssandra connection
-  **/
+ * Set up a Casssandra connection
+ **/
 
 public class CassandraConnection {
     private final Cluster cluster;
@@ -36,10 +35,10 @@ public class CassandraConnection {
 
     /**
      * <h1>CassandraConnection</h1>
-     *
+     * <p>
      * Case class to hold a Cassandra cluster and session connection
      **/
-    public CassandraConnection(Cluster cluster, Session session){
+    public CassandraConnection(Cluster cluster, Session session) {
         this.cluster = cluster;
         this.session = session;
 
@@ -60,44 +59,71 @@ public class CassandraConnection {
     new CassandraConnection(cluster = cluster, session = session)
   }*/
 
-  public static Cluster getCluster(Map<String, Object> connectorConfig){
+    public static Cluster getCluster(Map<String, Object> connectorConfig) {
 
-      String contactPoints  = (String) connectorConfig.get(CassandraConfigConstants.CONTACT_POINTS);
-    Integer port = (Integer) connectorConfig.get(CassandraConfigConstants.PORT);
-      Integer fetchSize = (Integer) connectorConfig.getOrDefault(CassandraConfigConstants.FETCH_SIZE, CassandraConfigConstants.FETCH_SIZE_DEFAULT);
-      Cluster.Builder builder = Cluster
-                              .builder()
-                              .addContactPoints(contactPoints.split(","))
-                              .withPort(port)
-                              .withLoadBalancingPolicy(new TokenAwarePolicy(DCAwareRoundRobinPolicy.builder().build()))
-                              .withQueryOptions(new QueryOptions().setFetchSize(fetchSize));
+        String contactPoints = (String) connectorConfig.get(CassandraConfigConstants.CONTACT_POINTS);
+        Integer port = (Integer) connectorConfig.get(CassandraConfigConstants.PORT);
+        Integer fetchSize = (Integer) connectorConfig.getOrDefault(CassandraConfigConstants.FETCH_SIZE, CassandraConfigConstants.FETCH_SIZE_DEFAULT);
+        Cluster.Builder builder = Cluster
+                .builder()
+                .addContactPoints(contactPoints.split(","))
+                .withPort(port)
+                .withLoadBalancingPolicy(new TokenAwarePolicy(DCAwareRoundRobinPolicy.builder().build()))
+                .withQueryOptions(new QueryOptions().setFetchSize(fetchSize));
 
-    //get authentication mode, only support NONE and USERNAME_PASSWORD for now
+        //get authentication mode, only support NONE and USERNAME_PASSWORD for now
 //    addAuthMode(connectorConfig, builder)
 
-    //is ssl enable
+        //is ssl enable
 //    addSSL(connectorConfig, builder)
-    return builder.build();
-  }
+        return builder.build();
+    }
 
-  /**
-    * Get a Cassandra session
-    *
-    * @param keySpace A configuration to build the setting from
-    * @param cluster  The cluster the get the session for
-    **/
-  public static Session  getSession(String keySpace, Cluster cluster) {
+    public void createKeyspace(
+            Cluster cluster,
+            String keyspaceName,
+            String replicationStrategy,
+            int replicationFactor) {
+        StringBuilder sb =
+                new StringBuilder("CREATE KEYSPACE IF NOT EXISTS ")
+                        .append(keyspaceName).append(" WITH replication = {")
+                        .append("'class':'").append(replicationStrategy)
+                        .append("','replication_factor':").append(replicationFactor)
+                        .append("};");
 
-    return cluster.connect(keySpace);
-  }
+        String query = sb.toString();
+        session.execute(query);
+    }
 
-  /**
-    * Add authentication to the connection builder
-    *
-    * @param connectorConfig The connector configuration to get the parameters from
-    * @param builder         The builder to add the authentication to
-    * @return The builder with authentication added.
-    **/
+    public void createTable(String tableName) {
+        StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
+                .append(tableName).append("(")
+                .append("id uuid PRIMARY KEY, ")
+                .append("title text,")
+                .append("subject text);");
+
+        String query = sb.toString();
+        session.execute(query);
+    }
+
+    /**
+     * Get a Cassandra session
+     *
+     * @param keySpace A configuration to build the setting from
+     * @param cluster  The cluster the get the session for
+     **/
+    public static Session getSession(String keySpace, Cluster cluster) {
+
+        return cluster.connect(keySpace);
+    }
+
+    /**
+     * Add authentication to the connection builder
+     *
+     * @param connectorConfig The connector configuration to get the parameters from
+     * @param builder         The builder to add the authentication to
+     * @return The builder with authentication added.
+     **/
 /*
   private def addAuthMode(connectorConfig: AbstractConfig, builder: Builder): Builder = {
     val username = connectorConfig.getString(CassandraConfigConstants.USERNAME)
@@ -112,13 +138,13 @@ public class CassandraConnection {
   }
 */
 
-  /**
-    * Add SSL connection options to the connection builder
-    *
-    * @param connectorConfig The connector configuration to get the parameters from
-    * @param builder         The builder to add the authentication to
-    * @return The builder with SSL added.
-    **/
+    /**
+     * Add SSL connection options to the connection builder
+     *
+     * @param connectorConfig The connector configuration to get the parameters from
+     * @param builder         The builder to add the authentication to
+     * @return The builder with SSL added.
+     **/
 /*  private def addSSL(connectorConfig: AbstractConfig, builder: Builder): Builder = {
     val ssl = connectorConfig.getBoolean(CassandraConfigConstants.SSL_ENABLED).asInstanceOf[Boolean]
     if (ssl) {
