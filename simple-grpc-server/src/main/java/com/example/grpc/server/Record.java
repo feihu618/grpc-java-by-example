@@ -1,5 +1,8 @@
 package com.example.grpc.server;
 
+import com.datastax.driver.mapping.annotations.Table;
+
+@Table(name = "record")
 public class Record {
     private String id;
     private String object;

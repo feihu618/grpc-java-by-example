@@ -79,7 +79,7 @@ public class CassandraConnection {
         return builder.build();
     }
 
-    public void createKeyspace(
+    public static void createKeyspace(
             Cluster cluster,
             String keyspaceName,
             String replicationStrategy,
@@ -92,10 +92,19 @@ public class CassandraConnection {
                         .append("};");
 
         String query = sb.toString();
-        session.execute(query);
+
+        Session session = cluster.newSession();
+        try {
+            session.execute(query);
+        }finally {
+            session.closeAsync();
+        }
+
+        return;
+
     }
 
-    public void createTable(String tableName) {
+    public static void createTable(Session session, String tableName) {
         StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
                 .append(tableName).append("(")
                 .append("id uuid PRIMARY KEY, ")
