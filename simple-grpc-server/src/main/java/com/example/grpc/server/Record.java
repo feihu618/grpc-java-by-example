@@ -1,12 +1,25 @@
 package com.example.grpc.server;
 
 import com.datastax.driver.mapping.annotations.Table;
+import com.example.grpc.TRecord;
 
-@Table(name = "record")
+@Table(name = "record1")
 public class Record {
     private String id;
     private String object;
     private Long version;
+
+    public static Record of(TRecord record) {
+
+        Record record1 = new Record();
+
+        record1.setId(record.getKey());
+        record1.setObject(record.getValue());
+        record1.setVersion(record.getVersion());
+
+        return record1;
+    }
+
 
     public String getId() {
         return id;
@@ -31,4 +44,15 @@ public class Record {
     public void setVersion(Long version) {
         this.version = version;
     }
+
+    @Override
+    public String toString() {
+        return "Record{" +
+                "id='" + id + '\'' +
+                ", object='" + object + '\'' +
+                ", version=" + version +
+                '}';
+    }
+
+
 }

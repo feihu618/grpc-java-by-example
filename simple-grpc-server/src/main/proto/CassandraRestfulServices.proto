@@ -28,15 +28,27 @@ enum RequestType {
     GET = 3;
 }
 
+message TRecord {
+
+    string key = 1;
+    string value = 2;
+    uint64 version = 3;
+}
+
 message TRequest {
+    RequestType type = 1;
+    TRecord record = 2;
+
 
 }
 
 message TResponse {
-    string greeting = 1;
+    string status = 1;
+    TRecord record = 2;
+
 }
 
 // 4. service, unary request/response
 service CassandraRestfulService {
-    rpc save(TRequest) returns (TResponse);
+    rpc exec(TRequest) returns (TResponse);
 }

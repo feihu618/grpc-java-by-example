@@ -22,6 +22,8 @@ import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.policies.DCAwareRoundRobinPolicy;
 import com.datastax.driver.core.policies.TokenAwarePolicy;
+import com.datastax.driver.mapping.Mapper;
+import com.datastax.driver.mapping.MappingManager;
 
 import java.util.Map;
 
@@ -107,9 +109,9 @@ public class CassandraConnection {
     public static void createTable(Session session, String tableName) {
         StringBuilder sb = new StringBuilder("CREATE TABLE IF NOT EXISTS ")
                 .append(tableName).append("(")
-                .append("id uuid PRIMARY KEY, ")
-                .append("title text,")
-                .append("subject text);");
+                .append("id text PRIMARY KEY, ")
+                .append("object text,")
+                .append("version text);");
 
         String query = sb.toString();
         session.execute(query);
@@ -125,6 +127,13 @@ public class CassandraConnection {
 
         return cluster.connect(keySpace);
     }
+
+    public static <T> Mapper<T> getMapper(Session session, Class<T> glass) {
+
+        MappingManager manager = new MappingManager(session);
+        return manager.mapper(glass);
+    }
+
 
     /**
      * Add authentication to the connection builder

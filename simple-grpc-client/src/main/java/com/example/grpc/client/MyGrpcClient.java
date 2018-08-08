@@ -16,12 +16,11 @@
 
 package com.example.grpc.client;
 
-import com.example.grpc.GreetingServiceGrpc;
-import com.example.grpc.HelloRequest;
-import com.example.grpc.HelloResponse;
-import com.example.grpc.Sentiment;
+import com.example.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+
+import java.util.UUID;
 
 /**
  * Created by rayt on 5/16/16.
@@ -32,15 +31,25 @@ public class MyGrpcClient {
         .usePlaintext(true)
         .build();
 
-    GreetingServiceGrpc.GreetingServiceBlockingStub stub =
-        GreetingServiceGrpc.newBlockingStub(channel);
+    CassandraRestfulServiceGrpc.CassandraRestfulServiceBlockingStub stub =
+            CassandraRestfulServiceGrpc.newBlockingStub(channel);
 
-    HelloResponse helloResponse = stub.greeting(
-        HelloRequest.newBuilder()
-            .setName("Ray")
-            .setAge(18)
-            .setSentiment(Sentiment.HAPPY)
+    String key = UUID.randomUUID().toString();
+
+    TResponse helloResponse = stub.exec(
+        TRequest.newBuilder()
+            .setType(RequestType.CREATE)
+                .setRecord(TRecord.newBuilder().setKey(key).setValue("hello world").setVersion(1l).build())
             .build());
+
+    System.out.println(helloResponse);
+
+
+    helloResponse = stub.exec(
+            TRequest.newBuilder()
+                    .setType(RequestType.GET)
+                    .setRecord(TRecord.newBuilder().setKey(key).build())
+                    .build());
 
     System.out.println(helloResponse);
 
