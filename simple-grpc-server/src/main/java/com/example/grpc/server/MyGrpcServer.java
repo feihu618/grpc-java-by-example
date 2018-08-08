@@ -18,20 +18,18 @@ package com.example.grpc.server;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
-import com.datastax.driver.mapping.Mapper;
 import com.example.grpc.CassandraRestfulServiceGrpc;
 import com.example.grpc.TRecord;
 import com.example.grpc.TRequest;
 import com.example.grpc.TResponse;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Maps;
+import com.google.common.collect.Lists;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -40,10 +38,10 @@ import java.util.Map;
 public class MyGrpcServer {
     static public void main(String[] args) throws IOException, InterruptedException {
 
-        final Mapper<Record> mapper = initCassandra(ImmutableMap.of("keyspace", "duker", "table", "record1"));
+        final Session mapper = initCassandra(ImmutableMap.of("keyspace", "duker", "table", "record"));
 
         Server server = ServerBuilder.forPort(8080)
-                .addService(new GreetingServiceImpl(mapper)).build();
+                .addService(new GreetingServiceImpl(new CassandraJsonWriter(mapper))).build();
 
 
         System.out.println("Starting server...");
@@ -52,7 +50,7 @@ public class MyGrpcServer {
         server.awaitTermination();
     }
 
-    private static Mapper<Record> initCassandra(Map<String, Object> properties) {
+    private static Session initCassandra(Map<String, Object> properties) {
 
         Cluster cluster = null;
         try {
@@ -77,7 +75,7 @@ public class MyGrpcServer {
             if (session == null)
                 session = CassandraConnection.getSession(keyspace, cluster);
 
-            return CassandraConnection.getMapper(session, Record.class);
+            return session;
 
 
 
@@ -92,10 +90,10 @@ public class MyGrpcServer {
     }
 
     public static class GreetingServiceImpl extends CassandraRestfulServiceGrpc.CassandraRestfulServiceImplBase {
-        private final Mapper<Record> mapper;;
+        private final CassandraJsonWriter jsonWriter;;
 
-        public GreetingServiceImpl(Mapper<Record> mapper) {
-            this.mapper = mapper;
+        public GreetingServiceImpl(CassandraJsonWriter jsonWriter) {
+            this.jsonWriter = jsonWriter;
         }
 
         @Override
@@ -107,19 +105,19 @@ public class MyGrpcServer {
 
                 case DEL:
 
-                    mapper.delete(Record.of(request.getRecord()));
+//                    jsonWriter.delete(Record.of(request.getRecord()));
                     tResponse = TResponse.newBuilder().setStatus("ok").build();
                     break;
                 case GET:
 
-                    final Record record = mapper.get(Record.of(request.getRecord()));
-                    tResponse = TResponse.newBuilder().setRecord(to0(record)).setStatus("ok").build();
+//                    final Record record = jsonWriter.get(Record.of(request.getRecord()));
+                    tResponse = TResponse.newBuilder()/*.setRecord(to0(record))*/.setStatus("ok").build();
                     break;
 
                 case UPDATE:
                 case CREATE:
 
-                    mapper.save(Record.of(request.getRecord()));
+                    jsonWriter.write(Lists.newArrayList(Record.of(request.getRecord())));
                     tResponse = TResponse.newBuilder().setStatus("ok").build();
                     break;
 

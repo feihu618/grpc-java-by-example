@@ -31,7 +31,7 @@
         <os.plugin.version>1.5.0.Final</os.plugin.version>
         <protobuf.plugin.version>0.5.0</protobuf.plugin.version>
         <protoc.version>3.5.1</protoc.version>
-        <datastax.version>3.5.1</datastax.version>
+        <datastax.version>3.0.1</datastax.version>
         <dockerfile-maven-version>1.4.0</dockerfile-maven-version>
         <docker.image.prefix>crafts</docker.image.prefix>
     </properties>
@@ -82,6 +82,13 @@
             <artifactId>cassandra-driver-mapping</artifactId>
             <version>${datastax.version}</version>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/com.google.guava/guava -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>19.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>

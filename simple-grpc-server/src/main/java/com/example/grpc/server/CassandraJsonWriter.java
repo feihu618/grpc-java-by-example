@@ -23,12 +23,16 @@ import java.util.concurrent.Executors;
 
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Session;
+import com.datastax.driver.core.Statement;
 import com.datastax.driver.core.exceptions.SyntaxError;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.sun.org.apache.regexp.internal.RE;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static com.datastax.driver.core.querybuilder.QueryBuilder.bindMarker;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.insertInto;
 
 
 /**
@@ -39,15 +43,21 @@ import org.slf4j.LoggerFactory;
 public class CassandraJsonWriter {
     private static final Logger logger = LoggerFactory.getLogger(CassandraJsonWriter.class);
     private Session session;
-    private Mapper<Record> mapper;
 
     public CassandraJsonWriter(CassandraConnection connection, Map<String, Object> settings) {
 
 //      initialize(settings.taskRetries, settings.errorPolicy)
 
-        MappingManager manager = new MappingManager(session);
 //      CassandraUtils.checkCassandraTables(session.getCluster, settings.kcqls, session.getLoggedKeyspace)
-        mapper = manager.mapper(Record.class);
+
+    }
+
+    public CassandraJsonWriter(Session session) {
+
+//      initialize(settings.taskRetries, settings.errorPolicy)
+
+//      CassandraUtils.checkCassandraTables(session.getCluster, settings.kcqls, session.getLoggedKeyspace)
+        this.session = session;
     }
 
 
@@ -115,13 +125,20 @@ public class CassandraJsonWriter {
 
     private void insert(Record record) {
 
+        // Build and execute a simple statement
+        Statement stmt =
+                insertInto("duker", "record")
+                        .value("id", record.getId())
+                        .value("object", record.getObject())
+                        .value("version", record.getVersion().toString());
 
-        mapper.save(record);
+        session.execute(stmt);
+
     }
 
     private void delete(Record record) {
 
-        mapper.delete(record);
+
     }
 
     /**
