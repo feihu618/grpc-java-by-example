@@ -20,6 +20,7 @@ import com.example.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
+import java.util.Random;
 import java.util.UUID;
 
 /**
@@ -31,6 +32,8 @@ public class MyGrpcClient {
         .usePlaintext(true)
         .build();
 
+    Random rand = new Random();
+
     CassandraRestfulServiceGrpc.CassandraRestfulServiceBlockingStub stub =
             CassandraRestfulServiceGrpc.newBlockingStub(channel);
 
@@ -39,7 +42,7 @@ public class MyGrpcClient {
     TResponse helloResponse = stub.exec(
         TRequest.newBuilder()
             .setType(RequestType.CREATE)
-                .setRecord(TRecord.newBuilder().setKey(key).setValue("hello world").setVersion(1l).build())
+                .setRecord(TRecord.newBuilder().setKey(key).setValue("hello world"+rand.nextInt()).setVersion(1l).build())
             .build());
 
     System.out.println(helloResponse);

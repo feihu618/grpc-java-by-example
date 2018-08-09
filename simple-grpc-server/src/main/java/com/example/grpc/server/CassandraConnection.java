@@ -111,7 +111,7 @@ public class CassandraConnection {
                 .append(tableName).append("(")
                 .append("id text PRIMARY KEY, ")
                 .append("object text,")
-                .append("version text);");
+                .append("version bigint);");
 
         String query = sb.toString();
         session.execute(query);

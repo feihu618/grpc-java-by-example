@@ -17,13 +17,16 @@
 package com.example.grpc.server;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.CodecRegistry;
 import com.datastax.driver.core.Session;
+import com.datastax.driver.extras.codecs.json.JacksonJsonCodec;
 import com.example.grpc.CassandraRestfulServiceGrpc;
 import com.example.grpc.TRecord;
 import com.example.grpc.TRequest;
 import com.example.grpc.TResponse;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.sun.org.apache.regexp.internal.RE;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
@@ -31,17 +34,28 @@ import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Created by rayt on 5/16/16.
  */
 public class MyGrpcServer {
+    static final Supplier<Cluster> PRODUCER = () -> {
+        return
+            Cluster.builder()
+                    .addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042))
+                    .withCodecRegistry(new CodecRegistry().register(new JacksonJsonCodec<Record>(Record.class)))
+                    .build();
+
+
+    };
+
     static public void main(String[] args) throws IOException, InterruptedException {
 
-        final Session mapper = initCassandra(ImmutableMap.of("keyspace", "duker", "table", "record"));
+        final Cluster mapper = initCassandra(ImmutableMap.of("keyspace", "duker", "table", "record"));
 
         Server server = ServerBuilder.forPort(8080)
-                .addService(new GreetingServiceImpl(new CassandraJsonWriter(mapper))).build();
+                .addService(new GreetingServiceImpl(new CassandraJsonWriter(PRODUCER))).build();
 
 
         System.out.println("Starting server...");
@@ -50,13 +64,11 @@ public class MyGrpcServer {
         server.awaitTermination();
     }
 
-    private static Session initCassandra(Map<String, Object> properties) {
+    private static Cluster initCassandra(Map<String, Object> properties) {
 
         Cluster cluster = null;
         try {
-            cluster = Cluster.builder()
-                    .addContactPointsWithPorts(new InetSocketAddress("127.0.0.1", 9042))
-                    .build();
+            cluster = PRODUCER.get();
 
             String keyspace = (String) properties.get("keyspace");
             String table = (String) properties.get("table");
@@ -75,7 +87,7 @@ public class MyGrpcServer {
             if (session == null)
                 session = CassandraConnection.getSession(keyspace, cluster);
 
-            return session;
+            return cluster;
 
 
 
@@ -110,8 +122,8 @@ public class MyGrpcServer {
                     break;
                 case GET:
 
-//                    final Record record = jsonWriter.get(Record.of(request.getRecord()));
-                    tResponse = TResponse.newBuilder()/*.setRecord(to0(record))*/.setStatus("ok").build();
+                    final Record record = jsonWriter.get(request.getRecord().getKey());
+                    tResponse = TResponse.newBuilder().setRecord(to0(record)).setStatus("ok").build();
                     break;
 
                 case UPDATE:

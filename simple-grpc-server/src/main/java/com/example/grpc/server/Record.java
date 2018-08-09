@@ -2,6 +2,8 @@ package com.example.grpc.server;
 
 import com.datastax.driver.mapping.annotations.Table;
 import com.example.grpc.TRecord;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Table(name = "record1")
 public class Record {
@@ -18,6 +20,16 @@ public class Record {
         record1.setVersion(record.getVersion());
 
         return record1;
+    }
+
+    public Record() {
+
+    }
+    @JsonCreator
+    public Record(@JsonProperty("id")String id, @JsonProperty("object")String object, @JsonProperty("version")Long version) {
+        this.id = id;
+        this.object = object;
+        this.version = version;
     }
 
 
