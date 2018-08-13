@@ -30,13 +30,13 @@ public class ZKClient {
     private ScheduledExecutorService expiryScheduler = Executors.newSingleThreadScheduledExecutor();
 
 
-    public ZKClient(String connectString1, Integer sessionTimeoutMs1, ZooKeeperClientWatcher zooKeeperClientWatcher1, Integer maxInFlightRequests) {
+    public ZKClient(String connectString1, Integer sessionTimeoutMs1, Integer maxInFlightRequests) {
         this.connectString = connectString1;
         this.sessionTimeoutMs = sessionTimeoutMs1;
-        this.zooKeeperClientWatcher = zooKeeperClientWatcher1;
+        this.zooKeeperClientWatcher = new ZooKeeperClientWatcher();
         this.inFlightRequests = new Semaphore(maxInFlightRequests);
         try {
-            zooKeeper = new ZooKeeper(connectString1, sessionTimeoutMs1, zooKeeperClientWatcher1);
+            zooKeeper = new ZooKeeper(connectString1, sessionTimeoutMs1, zooKeeperClientWatcher);
         } catch (IOException e) {
             e.printStackTrace();
             throw new IllegalStateException("--- create ZooKeeper failed");
@@ -787,6 +787,10 @@ public class ZKClient {
         @Override
         public ResponseMetadata getMetadata() {
             return metadata;
+        }
+
+        public byte[] getData() {
+            return data;
         }
     }
 
