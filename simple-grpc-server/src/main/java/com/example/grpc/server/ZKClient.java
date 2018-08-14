@@ -9,8 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
@@ -25,6 +28,7 @@ public class ZKClient {
     private ReentrantReadWriteLock initializationLock = new ReentrantReadWriteLock();
     private Semaphore inFlightRequests;
     private ReentrantLock isConnectedOrExpiredLock = new ReentrantLock();
+    private Condition isConnectedOrExpiredCondition = isConnectedOrExpiredLock.newCondition();
     private ConcurrentHashMap<String, ZNodeChangeHandler> zNodeChangeHandlers = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, ZNodeChildChangeHandler> zNodeChildChangeHandlers = new ConcurrentHashMap<>();
     private ScheduledExecutorService expiryScheduler = Executors.newSingleThreadScheduledExecutor();
@@ -43,14 +47,54 @@ public class ZKClient {
         }
     }
 
-    public void waitUntilConnected(Long timeout, TimeUnit timeUnit) {
+    /**
+     * Wait indefinitely until the underlying zookeeper client to reaches the CONNECTED state.
+     * @throws ZooKeeperClientAuthFailedException if the authentication failed either before or while waiting for connection.
+     * @throws ZooKeeperClientExpiredException if the session expired either before or while waiting for connection.
+     */
+    public void waitUntilConnected() throws InterruptedException {
+        isConnectedOrExpiredLock.lock();
+        try{
+            waitUntilConnected(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+        }finally {
+            isConnectedOrExpiredLock.unlock();
+        }
+    }
 
-        throw new UnsupportedOperationException();
+    public void waitUntilConnected(Long timeout, TimeUnit timeUnit) throws InterruptedException {
+
+        LOG.info("Waiting until connected.");
+        long nanos = timeUnit.toNanos(timeout);
+        isConnectedOrExpiredLock.lock();
+        try {
+            ZooKeeper.States state = connectionState();
+            while (!state.isConnected() && state.isAlive()) {
+                if (nanos <= 0) {
+                    throw new ZooKeeperClientTimeoutException("Timed out waiting for connection while in state: "+state);
+                }
+                nanos = isConnectedOrExpiredCondition.awaitNanos(nanos);
+                state = connectionState();
+            }
+            if (state == ZooKeeper.States.AUTH_FAILED) {
+                throw new ZooKeeperClientAuthFailedException("Auth failed either before or while waiting for connection");
+            } else if (state == ZooKeeper.States.CLOSED) {
+                throw new ZooKeeperClientExpiredException("Session expired either before or while waiting for connection");
+            }
+        }finally {
+            isConnectedOrExpiredLock.unlock();
+        }
+
+        LOG.info("Connected.");
     }
 
     public ZooKeeper.States connectionState() {
 
         return zooKeeper.getState();
+    }
+
+    public long getSessionId(){
+
+        return zooKeeper.getSessionId();
     }
 
 
@@ -110,6 +154,7 @@ public class ZKClient {
 
      }
 
+     @SuppressWarnings("all")
     private void send(AsyncRequest request, Consumer<AsyncResponse> processResponse) {
 
         long sendTimeMs = System.currentTimeMillis();
@@ -632,16 +677,6 @@ public class ZKClient {
         }
 
 
-        /**
-         * Throw KeeperException if the result code is not OK.
-         */
-        public default void maybeThrow() {
-            /*if (getResultCode() != Code.OK)
-                throw KeeperException.create(getResultCode(), getPath());*/
-
-            return;
-        }
-
         public ResponseMetadata getMetadata();
     }
 
@@ -789,6 +824,11 @@ public class ZKClient {
             return metadata;
         }
 
+        public Stat getStat(){
+
+            return stat;
+        }
+
         public byte[] getData() {
             return data;
         }
@@ -823,6 +863,10 @@ public class ZKClient {
         @Override
         public ResponseMetadata getMetadata() {
             return metadata;
+        }
+
+        public Stat getStat() {
+            return stat;
         }
     }
 
