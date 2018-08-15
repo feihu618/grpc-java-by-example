@@ -3,6 +3,9 @@ package com.example.grpc.server;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
+import java.util.Map;
+
 public class Json {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -24,5 +27,10 @@ public class Json {
      */
     public static byte[] encodeAsBytes(Object obj) throws JsonProcessingException {
         return OBJECT_MAPPER.writeValueAsBytes(obj);
+    }
+
+    public static <T> T decodeObject(byte[] bytes, Class<T> glass) throws IOException {
+
+        return OBJECT_MAPPER.readValue(bytes, glass);
     }
 }

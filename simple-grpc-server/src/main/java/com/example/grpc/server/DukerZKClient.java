@@ -3,17 +3,16 @@ package com.example.grpc.server;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.sun.corba.se.pept.broker.Broker;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.data.ACL;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.IntStream;
 
 import static org.apache.zookeeper.KeeperException.Code.NONODE;
@@ -44,13 +43,29 @@ public class DukerZKClient {
      * @param data the znode data
      * @return the created path (including the appended monotonically increasing number)
      */
-    private String createSequentialPersistentPath(String path, byte[] data) {
-        
+    public String createSequentialPersistentPath(String path, byte[] data) {
+
+        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(path, data, acls(path), CreateMode.PERSISTENT_SEQUENTIAL, null);
+        ZKClient.CreateResponse createResponse = (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
+
+        return createResponse.getName();
     }
 
-    public void registerBroker(BrokerInfo brokerInfo) {
-        
+    public void registerBroker(Node.BrokerInfo brokerInfo) {
+        String path = brokerInfo.path();
+
+
+        try {
+            checkedEphemeralCreate(path, brokerInfo.toJsonBytes());
+            LOG.info("Registered broker {} at path {} with addresses: ${brokerInfo.broker.endPoints}", brokerInfo.getBroker().getId(), path);
+        } catch (KeeperException e) {
+
+            LOG.error("--- registerBroker:{} failed", brokerInfo, e);
+            throw new RuntimeException("registerBroker failed, please check configuration~");
+        }
+
     }
+
 
     /**
      * Registers a given broker in zookeeper as the controller.
@@ -59,11 +74,17 @@ public class DukerZKClient {
      * @throws KeeperException if an error is returned by ZooKeeper.
      */
     public void registerController(Integer controllerId, Long timestamp) {
-       
+        String path = Cluster.MasterZNode.path();
+        try {
+            checkedEphemeralCreate(path, Cluster.MasterZNode.encode(controllerId, timestamp));
+        } catch (KeeperException e) {
+            e.printStackTrace();//
+            LOG.info("--- The {} registerController falied", controllerId);
+        }
     }
 
-    public void updateBrokerInfo(BrokerInfo brokerInfo) {
-        
+    public void updateBrokerInfo(Node.BrokerInfo brokerInfo) {
+        throw new UnsupportedOperationException();
     }
     
     
@@ -75,7 +96,8 @@ public class DukerZKClient {
      * @return SetDataResponse
      */
     public ZKClient.SetDataResponse setControllerEpochRaw(Integer epoch, Integer epochZkVersion) {
-        
+        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(Cluster.EpochZNode.path(), Cluster.EpochZNode.encode(epoch), epochZkVersion, null);
+        return (ZKClient.SetDataResponse) retryRequestUntilConnected(setDataRequest);
     }
 
     /**
@@ -84,7 +106,9 @@ public class DukerZKClient {
      * @return CreateResponse
      */
     public ZKClient.CreateResponse createControllerEpochRaw(Integer epoch) {
-        
+        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(Cluster.EpochZNode.path(), Cluster.EpochZNode.encode(epoch),
+                acls(Cluster.EpochZNode.path()), CreateMode.PERSISTENT, null);
+        return (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
     }
     
 
@@ -92,23 +116,30 @@ public class DukerZKClient {
      * Gets all brokers in the cluster.
      * @return sequence of brokers in the cluster.
      */
-    def getAllBrokersInCluster: Seq[Broker] = {
-        
+    public List<Node> getAllBrokersInCluster() {
+
+        throw new UnsupportedOperationException();
     }
 
     /**
      * Get a broker from ZK
      * @return an optional Broker
      */
-    public Option[Broker] getBroker(Integer brokerId) {
-        
+    public Optional<Node> getBroker(Integer brokerId) {
+
+        throw new UnsupportedOperationException();
     }
 
     /**
      * Gets the list of sorted broker Ids
      */
-    def getSortedBrokerList(): Seq[Integer] =
-    getChildren(BrokerIdsZNode.path).map(_.toInt).sorted
+    public ArrayList<Integer> getSortedBrokerList() {
+
+//        getChildren(BrokerIdsZNode.path).map(_.toInt).sorted
+
+        throw new UnsupportedOperationException();
+    }
+
     
 
     /**
@@ -118,8 +149,9 @@ public class DukerZKClient {
      *         and second element is zk node version.
      *         returns (None, ZkVersion.UnknownVersion) if node doesn't exist and throws exception for any error
      */
-    public (Option[Array[Byte]], Integer) getDataAndVersion(String path) {
-     
+    public Optional<Tuple<byte[], Integer>> getDataAndVersion(String path) {
+
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -129,8 +161,8 @@ public class DukerZKClient {
      *         and second element is zk node stats.
      *         returns (None, ZkStat.NoStat) if node doesn't exists and throws exception for any error
      */
-    public (Option[byte[]], Stat) getDataAndStat(String path) {
-   
+    public Optional<Tuple<byte[], Stat>> getDataAndStat(String path) {
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -138,8 +170,9 @@ public class DukerZKClient {
      * @param path
      * @return list of child node names
      */
-    public Seq[String] getChildren(path : String) {
-   
+    public ArrayList<String> getChildren(String path) {
+
+        throw new UnsupportedOperationException();
     }
 
     /**
@@ -150,10 +183,11 @@ public class DukerZKClient {
      * since the previous update may have succeeded (but the stored zkVersion no longer matches the expected one).
      * In this case, we will run the optionalChecker to further check if the previous write did indeed succeeded.
      */
-    def conditionalUpdatePath(String path, byte[] data, Integer expectVersion,
-                              Option optionalChecker[(KafkaZkClient, String, byte[]) => (Boolean,Integer)] = None): (Boolean, Integer) = {
+    public Tuple<Boolean,Integer> conditionalUpdatePath(String path, byte[] data, Integer expectVersion,
+                              ThreeArgsFunction<DukerZKClient, String, byte[], Tuple<Boolean,Integer>> optionalChecker) {
 
 
+        throw new UnsupportedOperationException();
     }
     
 
@@ -162,72 +196,25 @@ public class DukerZKClient {
      * Gets the controller id.
      * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
      */
-    def getControllerId: Option[Integer] = {
- 
+    public Optional<Integer> getControllerId() {
+        throw new UnsupportedOperationException();
     }
 
     /**
      * Deletes the controller znode.
      */
-    def deleteController(): void = {
-       
+    public void deleteController() {
+        throw new UnsupportedOperationException();
     }
 
     /**
      * Gets the controller epoch.
      * @return optional (Integer, Stat) that is Some if the controller epoch path exists and None otherwise.
      */
-    def getControllerEpoch: Option[(Integer, Stat)] = {
-       
-    }
-    
-
-    /**
-     * Gets the resource types, for which ACLs are stored, for the supplied resource pattern type.
-     * @param patternType The resource pattern type to retrieve the names for.
-     * @return list of resource type names
-     */
-    public Seq[String] getResourceTypes(PatternType patternType) {
-        getChildren(ZkAclStore(patternType).aclPath)
+    public Optional<AbstractMap.SimpleEntry<Integer, Stat>> getControllerEpoch() {
+        throw new UnsupportedOperationException();
     }
 
-    /**
-     * Gets the resource names, for which ACLs are stored, for a given resource type and pattern type
-     * @param patternType The resource pattern type to retrieve the names for.
-     * @param resourceType Resource type to retrieve the names for.
-     * @return list of resource names
-     */
-    public Seq[String] getResourceNames(PatternType patternType, ResourceType resourceType) {
-        getChildren(ZkAclStore(patternType).path(resourceType))
-    }
-
-    /**
-     * Deletes the given Resource node
-     * @param resource
-     * @return delete status
-     */
-    public Boolean deleteResource(Resource resource) {
-        deleteRecursive(ResourceZNode.path(resource))
-    }
-
-    /**
-     * checks the resource existence
-     * @param resource
-     * @return existence status
-     */
-    public Boolean resourceExists(Resource resource) {
-        pathExists(ResourceZNode.path(resource))
-    }
-
-    /**
-     * Conditional delete the resource node
-     * @param resource
-     * @param expectedVersion
-     * @return return true if it succeeds, false otherwise (the current version is not the expected version)
-     */
-    public Boolean conditionalDelete(Resource resource, Integer expectedVersion) {
-        
-    }
 
     /**
      * Deletes the zk node recursively
@@ -235,7 +222,13 @@ public class DukerZKClient {
      * @return  return true if it succeeds, false otherwise
      */
     public Boolean deletePath(String path) {
-        deleteRecursive(path)
+        try {
+            return deleteRecursive(path);
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        }
+
+        return false;
     }
     
 
@@ -247,16 +240,24 @@ public class DukerZKClient {
      * @return `true` if the path exists or `false` if it does not
      * @throws KeeperException if an error is returned by ZooKeeper
      */
-    public Boolean registerZNodeChangeHandlerAndCheckExistence(ZNodeChangeHandler zNodeChangeHandler) {
-        
+    public Boolean registerZNodeChangeHandlerAndCheckExistence(ZKClient.ZNodeChangeHandler zNodeChangeHandler) throws KeeperException {
+        zkClient.registerZNodeChangeHandler(zNodeChangeHandler);
+        ZKClient.ExistsResponse existsResponse = (ZKClient.ExistsResponse) retryRequestUntilConnected(new ZKClient.ExistsRequest(zNodeChangeHandler.getPath(), null));
+        switch (existsResponse.getResultCode()){
+            case OK:
+                return true;
+            case NONODE:
+                return false;
+            default: throw existsResponse.getResultException();
+        }
     }
 
     /**
      * See ZooKeeperClient.registerZNodeChangeHandler
      * @param zNodeChangeHandler
      */
-    public void registerZNodeChangeHandler(ZNodeChangeHandler zNodeChangeHandler) {
-        zkClient.registerZNodeChangeHandler(zNodeChangeHandler)
+    public void registerZNodeChangeHandler(ZKClient.ZNodeChangeHandler zNodeChangeHandler) {
+        zkClient.registerZNodeChangeHandler(zNodeChangeHandler);
     }
 
     /**
@@ -264,15 +265,15 @@ public class DukerZKClient {
      * @param path
      */
     public void unregisterZNodeChangeHandler(String path) {
-        zkClient.unregisterZNodeChangeHandler(path)
+        zkClient.unregisterZNodeChangeHandler(path);
     }
 
     /**
      * See ZooKeeperClient.registerZNodeChildChangeHandler
      * @param zNodeChildChangeHandler
      */
-    public void registerZNodeChildChangeHandler(ZNodeChildChangeHandler zNodeChildChangeHandler) {
-        zkClient.registerZNodeChildChangeHandler(zNodeChildChangeHandler)
+    public void registerZNodeChildChangeHandler(ZKClient.ZNodeChildChangeHandler zNodeChildChangeHandler) {
+        zkClient.registerZNodeChildChangeHandler(zNodeChildChangeHandler);
     }
 
     /**
@@ -280,31 +281,24 @@ public class DukerZKClient {
      * @param path
      */
     public void unregisterZNodeChildChangeHandler(String path) {
-        zkClient.unregisterZNodeChildChangeHandler(path)
+        zkClient.unregisterZNodeChildChangeHandler(path);
     }
 
-    /**
-     *
-     * @param stateChangeHandler
-     */
-    public void registerStateChangeHandler(StateChangeHandler stateChangeHandler) {
-        zkClient.registerStateChangeHandler(stateChangeHandler)
-    }
 
-    /**
-     *
-     * @param name
-     */
-    public void unregisterStateChangeHandler(String name) {
-        zkClient.unregisterStateChangeHandler(name)
-    }
 
     /**
      * Close the underlying ZooKeeperClient.
      */
     public void  close() {
 
-        zkClient.close();
+        try {
+
+            zkClient.close();
+        } catch (InterruptedException e) {
+//            e.printStackTrace();
+            LOG.warn("--- happen InterruptedException");
+            Thread.currentThread().interrupt();
+        }
     }
 
 
@@ -313,14 +307,16 @@ public class DukerZKClient {
      *
      * @return optional cluster id in String.
      */
-    public Optional<String> getClusterId() {
-        /*ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(CLUSTER_ID);
-        ZKClient.GetDataResponse getDataResponse = retryRequestUntilConnected(getDataRequest);
-        getDataResponse.resultCode match {
-            case Code.OK => Some(ClusterIdZNode.fromJson(getDataResponse.data))
-            case Code.NONODE => None
-            case _ => throw getDataResponse.resultException.get
-        }*/
+    public Optional<String> getClusterId() throws KeeperException {
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(CLUSTER_ID, null);
+        ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+        switch (getDataResponse.getResultCode()){
+            case OK:
+                return Optional.ofNullable(Cluster.ClusterIdZNode.fromJson(getDataResponse.getData())).map(map -> map.get("id"));
+            case NONODE:
+                return Optional.empty();
+            default: throw getDataResponse.getResultException();
+        }
     }
 
     /**
@@ -329,18 +325,10 @@ public class DukerZKClient {
      */
     public String createOrGetClusterId(String proposedClusterId) {
         try {
-            createRecursive(CLUSTER_ID, toJson0(proposedClusterId), true);
+            createRecursive(CLUSTER_ID, Cluster.ClusterIdZNode.toJson(proposedClusterId), true);
             return proposedClusterId;
         } catch (Exception e){
             throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");
-        }
-    }
-
-    byte[] toJson0(String id) {
-        try {
-            return Json.encodeAsBytes(ImmutableMap.of("version","1", "id", id));
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("fatal error: Json.encodeAsBytes");
         }
     }
 

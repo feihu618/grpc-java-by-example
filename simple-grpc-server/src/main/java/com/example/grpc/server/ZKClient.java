@@ -707,6 +707,11 @@ public class ZKClient {
             this.metadata = metadata;
         }
 
+        public String getName() {
+
+            return name;
+        }
+
         @Override
         public Code getResultCode() {
             return resultCode;
