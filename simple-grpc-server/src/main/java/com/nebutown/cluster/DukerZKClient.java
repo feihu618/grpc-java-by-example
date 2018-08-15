@@ -1,4 +1,4 @@
-package com.example.grpc.server;
+package com.nebutown.cluster;
 
 import com.google.common.collect.Lists;
 import org.apache.zookeeper.CreateMode;

@@ -1,4 +1,4 @@
-package com.example.grpc.server;
+package com.nebutown.cluster;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

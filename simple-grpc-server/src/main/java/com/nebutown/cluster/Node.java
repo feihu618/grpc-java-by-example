@@ -1,4 +1,4 @@
-package com.example.grpc.server;
+package com.nebutown.cluster;
 
 public class Node {
 
