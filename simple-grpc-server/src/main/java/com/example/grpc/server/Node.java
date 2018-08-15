@@ -26,13 +26,21 @@ public class Node {
     }
 
     public static class ZNode{
+        public static String getPath() {
 
+            throw new UnsupportedOperationException();
+        }
         public static String getPath(int id) {
 
             throw new UnsupportedOperationException();
         }
 
         public static byte[] encode(BrokerInfo brokerInfo) {
+
+            throw new UnsupportedOperationException();
+        }
+
+        public static BrokerInfo decode(Integer brokerId, byte[] data) {
 
             throw new UnsupportedOperationException();
         }

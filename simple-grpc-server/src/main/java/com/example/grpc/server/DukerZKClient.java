@@ -13,10 +13,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.apache.zookeeper.KeeperException.Code.NONODE;
 import static org.apache.zookeeper.KeeperException.Code.OK;
+import static sun.plugin.javascript.navig.JSType.Option;
 
 
 public class DukerZKClient {
@@ -24,6 +26,7 @@ public class DukerZKClient {
     private static final int MatchAnyVersion = -1; // if used in a conditional set, matches any version (the value should match ZooKeeper codebase)
     private static final int UnknownVersion = -2;  // Version returned from get if node does not exist (internal constant for Kafka codebase, unused value in ZK)
 
+    private static final Stat  NoStat = new Stat();
     private static final String NODES_SEQ_ID = "nodes/seqid";
     private static final String CLUSTER_ID = "cluster/id";
 
@@ -118,16 +121,42 @@ public class DukerZKClient {
      */
     public List<Node> getAllBrokersInCluster() {
 
-        throw new UnsupportedOperationException();
+        ArrayList<Integer> brokerIds = getSortedBrokerList();
+        ArrayList<ZKClient.GetDataRequest> getDataRequests = brokerIds.stream().map(brokerId -> new ZKClient.GetDataRequest(Node.ZNode.getPath(brokerId), brokerId)).collect(Collectors.toCollection(ArrayList::new));
+        ArrayList<ZKClient.AsyncResponse> getDataResponses = retryRequestsUntilConnected(getDataRequests);
+
+        final List<Node> nodeList = getDataResponses.stream().map(getDataResponse -> {
+            Integer brokerId = (Integer) getDataResponse.getCtx().get();
+            switch (getDataResponse.getResultCode()) {
+                case OK:
+                    return Node.ZNode.decode(brokerId, ((ZKClient.GetDataResponse) getDataResponse).getData()).getBroker();
+                case NONODE:
+                default:
+                    return null;
+            }
+        }).filter(Objects::nonNull).collect(Collectors.toList());
+
+        if(nodeList.size() == getDataRequests.size())
+            return nodeList;
+        else
+            throw new IllegalStateException("--- try next");
     }
 
     /**
      * Get a broker from ZK
      * @return an optional Broker
      */
-    public Optional<Node> getBroker(Integer brokerId) {
-
-        throw new UnsupportedOperationException();
+    public Optional<Node> getBroker(Integer brokerId) throws KeeperException {
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Node.ZNode.getPath(brokerId), null);
+        ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+        switch (getDataResponse.getResultCode()){
+            case OK:
+                return Optional.ofNullable(Node.ZNode.decode(brokerId, getDataResponse.data)).map(Node.BrokerInfo::getBroker);
+            case NONODE:
+                return Optional.empty();
+            default:
+                throw getDataResponse.getResultException();
+        }
     }
 
     /**
@@ -135,9 +164,8 @@ public class DukerZKClient {
      */
     public ArrayList<Integer> getSortedBrokerList() {
 
-//        getChildren(BrokerIdsZNode.path).map(_.toInt).sorted
+        return getChildren(Node.ZNode.getPath()).stream().mapToInt(Integer::parseInt).sorted().boxed().collect(Collectors.toCollection(ArrayList::new));
 
-        throw new UnsupportedOperationException();
     }
 
     
@@ -151,7 +179,16 @@ public class DukerZKClient {
      */
     public Optional<Tuple<byte[], Integer>> getDataAndVersion(String path) {
 
-        throw new UnsupportedOperationException();
+        Optional<Tuple<byte[], Stat>> optional = getDataAndStat(path);
+
+        return optional.map(tuple -> {
+
+            if (Objects.equals(tuple.getT(), NoStat))
+                return Tuple.of(tuple.getS(), UnknownVersion);
+            else
+                return Tuple.of(tuple.getS(), tuple.getT().getVersion());
+
+        });
     }
 
     /**
@@ -469,7 +506,7 @@ public class DukerZKClient {
         return Collections.emptyList();
     }
 
-    private ArrayList<ZKClient.AsyncResponse> retryRequestsUntilConnected(ArrayList<ZKClient.AsyncRequest> requests) {
+    private ArrayList<ZKClient.AsyncResponse> retryRequestsUntilConnected(ArrayList<? extends ZKClient.AsyncRequest> requests) {
         ArrayList<ZKClient.AsyncRequest> remainingRequests = new ArrayList<>(requests);
         ArrayList<ZKClient.AsyncResponse> responses = new ArrayList<>();
 
