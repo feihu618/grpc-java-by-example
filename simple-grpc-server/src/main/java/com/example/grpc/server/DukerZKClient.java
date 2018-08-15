@@ -1,12 +1,10 @@
 package com.example.grpc.server;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import com.sun.corba.se.pept.broker.Broker;
 import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.*;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
@@ -18,7 +16,6 @@ import java.util.stream.IntStream;
 
 import static org.apache.zookeeper.KeeperException.Code.NONODE;
 import static org.apache.zookeeper.KeeperException.Code.OK;
-import static sun.plugin.javascript.navig.JSType.Option;
 
 
 public class DukerZKClient {
@@ -119,7 +116,7 @@ public class DukerZKClient {
      * Gets all brokers in the cluster.
      * @return sequence of brokers in the cluster.
      */
-    public List<Node> getAllBrokersInCluster() {
+    public List<Node> getAllBrokersInCluster() throws KeeperException {
 
         ArrayList<Integer> brokerIds = getSortedBrokerList();
         ArrayList<ZKClient.GetDataRequest> getDataRequests = brokerIds.stream().map(brokerId -> new ZKClient.GetDataRequest(Node.ZNode.getPath(brokerId), brokerId)).collect(Collectors.toCollection(ArrayList::new));
@@ -162,7 +159,7 @@ public class DukerZKClient {
     /**
      * Gets the list of sorted broker Ids
      */
-    public ArrayList<Integer> getSortedBrokerList() {
+    public ArrayList<Integer> getSortedBrokerList() throws KeeperException {
 
         return getChildren(Node.ZNode.getPath()).stream().mapToInt(Integer::parseInt).sorted().boxed().collect(Collectors.toCollection(ArrayList::new));
 
@@ -177,7 +174,7 @@ public class DukerZKClient {
      *         and second element is zk node version.
      *         returns (None, ZkVersion.UnknownVersion) if node doesn't exist and throws exception for any error
      */
-    public Optional<Tuple<byte[], Integer>> getDataAndVersion(String path) {
+    public Optional<Tuple<byte[], Integer>> getDataAndVersion(String path) throws KeeperException {
 
         Optional<Tuple<byte[], Stat>> optional = getDataAndStat(path);
 
@@ -198,8 +195,18 @@ public class DukerZKClient {
      *         and second element is zk node stats.
      *         returns (None, ZkStat.NoStat) if node doesn't exists and throws exception for any error
      */
-    public Optional<Tuple<byte[], Stat>> getDataAndStat(String path) {
-        throw new UnsupportedOperationException();
+    public Optional<Tuple<byte[], Stat>> getDataAndStat(String path) throws KeeperException {
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(path, null);
+        ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+
+        switch (getDataResponse.getResultCode()){
+            case OK:
+                return Optional.of(Tuple.of(getDataResponse.getData(), getDataResponse.getStat()));
+            case NONODE:
+                return Optional.of(Tuple.of(null, NoStat));
+            default:
+                throw getDataResponse.getResultException();
+        }
     }
 
     /**
@@ -207,9 +214,17 @@ public class DukerZKClient {
      * @param path
      * @return list of child node names
      */
-    public ArrayList<String> getChildren(String path) {
+    public List<String> getChildren(String path) throws KeeperException {
 
-        throw new UnsupportedOperationException();
+        ZKClient.GetChildrenResponse getChildrenResponse = (ZKClient.GetChildrenResponse) retryRequestUntilConnected(new ZKClient.GetChildrenRequest(path, null));
+        switch (getChildrenResponse.getResultCode()){
+            case OK:
+                return getChildrenResponse.getChildren();
+            case NONODE:
+                return Collections.emptyList();
+            default:
+                throw getChildrenResponse.getResultException();
+        }
     }
 
     /**
@@ -233,8 +248,17 @@ public class DukerZKClient {
      * Gets the controller id.
      * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
      */
-    public Optional<Integer> getControllerId() {
-        throw new UnsupportedOperationException();
+    public Optional<Integer> getControllerId() throws KeeperException {
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Cluster.MasterZNode.path(), null);
+        ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+        switch (getDataResponse.getResultCode()){
+            case OK:
+                Cluster.MasterZNode.decode(getDataResponse.getData());
+            case NONODE:
+                return Optional.empty();
+            default:
+                throw getDataResponse.getResultException();
+        }
     }
 
     /**
@@ -248,8 +272,18 @@ public class DukerZKClient {
      * Gets the controller epoch.
      * @return optional (Integer, Stat) that is Some if the controller epoch path exists and None otherwise.
      */
-    public Optional<AbstractMap.SimpleEntry<Integer, Stat>> getControllerEpoch() {
-        throw new UnsupportedOperationException();
+    public Optional<Tuple<Integer, Stat>> getControllerEpoch() throws KeeperException {
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Cluster.EpochZNode.path(), null);
+        ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+        switch(getDataResponse.getResultCode()) {
+            case OK:
+                int epoch = Cluster.EpochZNode.decode(getDataResponse.getData());
+                return Optional.of(Tuple.of(epoch, getDataResponse.getStat()));
+            case NONODE:
+                return Optional.empty();
+            default:
+                throw getDataResponse.getResultException();
+        }
     }
 
 

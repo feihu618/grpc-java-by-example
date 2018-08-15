@@ -43,6 +43,10 @@ public class Cluster {
         public static byte[] encode(Integer controllerId, Long timestamp) {
             throw new UnsupportedOperationException();
         }
+
+        public static int decode(byte[] data) {
+            throw new UnsupportedOperationException();
+        }
     }
 
     public static class EpochZNode {
@@ -51,6 +55,10 @@ public class Cluster {
         }
 
         public static byte[] encode(Integer epoch) {
+            throw new UnsupportedOperationException();
+        }
+
+        public static int decode(byte[] data) {
             throw new UnsupportedOperationException();
         }
     }
