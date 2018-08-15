@@ -11,7 +11,11 @@ import java.util.Map;
 public class Cluster {
     private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
 
-    public static class ClusterIdZNode{
+    public static class ClusterZNode {
+
+        public static String path() {
+            throw new UnsupportedOperationException();
+        }
         public static byte[] toJson(String id) {
             try {
                 return Json.encodeAsBytes(ImmutableMap.of("version","1", "id", id));

@@ -383,7 +383,7 @@ public class DukerZKClient {
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
-                return Optional.ofNullable(Cluster.ClusterIdZNode.fromJson(getDataResponse.getData())).map(map -> map.get("id"));
+                return Optional.ofNullable(Cluster.ClusterZNode.fromJson(getDataResponse.getData())).map(map -> map.get("id"));
             case NONODE:
                 return Optional.empty();
             default: throw getDataResponse.getResultException();
@@ -396,7 +396,7 @@ public class DukerZKClient {
      */
     public String createOrGetClusterId(String proposedClusterId) {
         try {
-            createRecursive(CLUSTER_ID, Cluster.ClusterIdZNode.toJson(proposedClusterId), true);
+            createRecursive(CLUSTER_ID, Cluster.ClusterZNode.toJson(proposedClusterId), true);
             return proposedClusterId;
         } catch (Exception e){
             throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");
