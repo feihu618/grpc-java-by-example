@@ -4,6 +4,10 @@ import com.example.grpc.server.RID;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Maps;
 import com.nebutown.cluster.Json;
+import com.nebutown.grpc.RecordServiceGrpc;
+import com.nebutown.grpc.TRequest;
+import com.nebutown.grpc.TResponse;
+import io.grpc.stub.StreamObserver;
 
 import java.lang.ref.WeakReference;
 import java.util.Map;
@@ -12,13 +16,13 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 
 
-public class TxDataBox {
+public class LTxDataBox extends RecordServiceGrpc.RecordServiceImplBase {
 
     private static final String TableName = "holdAllTABLE";
 
-    private static TxDataBox inst = new TxDataBox();
+    private static LTxDataBox inst = new LTxDataBox();
 
-    private static TxDataBox get() {
+    private static LTxDataBox get() {
         return inst;
     }
 
@@ -27,7 +31,7 @@ public class TxDataBox {
     private final WeakHashMap<RID, Map<String, Snapshot<? extends Object>>> updates;
 
 
-    private TxDataBox() {
+    private LTxDataBox() {
 
 
         cache = new WeakHashMap<>();
@@ -37,6 +41,12 @@ public class TxDataBox {
 
     }
 
+    @Override
+    public void exec(TRequest request, StreamObserver<TResponse> responseObserver) {
+        //TODO:
+        throw new UnsupportedOperationException();
+    }
+
     public static boolean tryCommit(RID request) {
 
         throw new UnsupportedOperationException();
@@ -44,7 +54,7 @@ public class TxDataBox {
 
     public static void commit(RID request) {
 
-        final TxDataBox txDataBox = get();
+        final LTxDataBox txDataBox = get();
         synchronized (txDataBox.cache) {
         final Map<String, Snapshot<?>> stringSnapshotMap = txDataBox.updates.remove(request);
 
@@ -61,7 +71,7 @@ public class TxDataBox {
         }
     }
 
-    private static boolean mvccCollisionDetected0(TxDataBox txDataBox, Map<String, Snapshot<?>> stringSnapshotMap) {
+    private static boolean mvccCollisionDetected0(LTxDataBox txDataBox, Map<String, Snapshot<?>> stringSnapshotMap) {
 
         return stringSnapshotMap.entrySet()
                 .parallelStream()
@@ -72,7 +82,7 @@ public class TxDataBox {
                 });
     }
 
-    private static void flushAndSyncLocalCache0(TxDataBox txDataBox, Map<String, Snapshot<?>> stringSnapshotMap) {
+    private static void flushAndSyncLocalCache0(LTxDataBox txDataBox, Map<String, Snapshot<?>> stringSnapshotMap) {
 
         stringSnapshotMap.forEach((key, value) -> txDataBox.table.putRecord(key, Json.toJson(value)));
 
@@ -93,7 +103,7 @@ public class TxDataBox {
         T v = tryGetUpdates0(request, key);//read forward
 
         if (v != null) return v;
-        final TxDataBox txDataBox = get();
+        final LTxDataBox txDataBox = get();
         final Map<String, Snapshot<?>> cache = txDataBox.cache;
         synchronized (txDataBox.cache){
 
@@ -140,7 +150,7 @@ public class TxDataBox {
 
 
     public static <T> void updateData(RID request, UUID key, T data) {
-        TxDataBox.updateData(request, key, data);
+        LTxDataBox.updateData(request, key, data);
     }
 
     @SuppressWarnings("unchecked")

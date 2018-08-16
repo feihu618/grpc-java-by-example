@@ -12,10 +12,6 @@ public class RID implements Comparable<RID> {
         return id;
     }
 
-    public Long getLongValue() {
-        return Convert.toLong(id);
-    }
-
     public RID copy() {
         return new RID(this.id);
     }

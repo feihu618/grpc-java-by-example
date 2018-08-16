@@ -331,6 +331,7 @@ public class DukerZKClient {
         zkClient.registerZNodeChangeHandler(zNodeChangeHandler);
     }
 
+
     /**
      * See ZooKeeperClient.unregisterZNodeChangeHandler
      * @param path
@@ -356,6 +357,18 @@ public class DukerZKClient {
     }
 
 
+    /**
+     * See ZooKeeperClient.registerSessionStateChangeHandler
+     * @param sessionStateChangeHandler
+     */
+    public void registerSessionStateChangeHandler(ZKClient.SessionStateChangeHandler sessionStateChangeHandler) {
+        zkClient.registerSessionStateChangeHandler(sessionStateChangeHandler);
+    }
+
+
+    public void unregisterSessionStateChangeHandler(String name) {
+        zkClient.unregisterSessionStateChangeHandler(name);
+    }
 
     /**
      * Close the underlying ZooKeeperClient.

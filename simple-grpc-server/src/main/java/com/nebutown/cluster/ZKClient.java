@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -31,6 +32,7 @@ public class ZKClient {
     private Condition isConnectedOrExpiredCondition = isConnectedOrExpiredLock.newCondition();
     private ConcurrentHashMap<String, ZNodeChangeHandler> zNodeChangeHandlers = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, ZNodeChildChangeHandler> zNodeChildChangeHandlers = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, SessionStateChangeHandler> sessionStateChangeHandlers = new ConcurrentHashMap<>();
     private ScheduledExecutorService expiryScheduler = Executors.newSingleThreadScheduledExecutor();
 
 
@@ -299,6 +301,16 @@ public class ZKClient {
     }
 
 
+    public void registerSessionStateChangeHandler(SessionStateChangeHandler sessionStateChangeHandler) {
+
+        sessionStateChangeHandlers.put(sessionStateChangeHandler.getName(), sessionStateChangeHandler);
+    }
+
+    public void unregisterSessionStateChangeHandler(String name) {
+
+        sessionStateChangeHandlers.remove(name);
+    }
+
     public void close() throws InterruptedException {
         LOG.info("Closing.");
         ReentrantReadWriteLock.WriteLock writeLock = initializationLock.writeLock();
@@ -346,6 +358,10 @@ public class ZKClient {
 
     private void reinitialize() throws InterruptedException {
 
+        final Collection<SessionStateChangeHandler> values = sessionStateChangeHandlers.values();
+        values.parallelStream()
+                .forEach(SessionStateChangeHandler::beforeInitializingSession);
+
         final ReentrantReadWriteLock.WriteLock writeLock = initializationLock.writeLock();
 
         writeLock.lock();
@@ -368,6 +384,9 @@ public class ZKClient {
         } finally {
             writeLock.unlock();
         }
+
+        values.parallelStream()
+                .forEach(SessionStateChangeHandler::afterInitializingSession);
 
     }
 
@@ -446,6 +465,13 @@ public class ZKClient {
         String getPath();
 
         void handleChildChange();
+    }
+
+    interface SessionStateChangeHandler {
+        String getName();
+
+        void beforeInitializingSession();
+        void afterInitializingSession();
     }
 
 

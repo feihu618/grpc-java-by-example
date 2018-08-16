@@ -26,6 +26,7 @@ import com.example.grpc.TRequest;
 import com.example.grpc.TResponse;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.nebutown.cluster.DukerZKClient;
 import com.sun.org.apache.regexp.internal.RE;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
@@ -54,14 +55,31 @@ public class MyGrpcServer {
 
         final Cluster mapper = initCassandra(ImmutableMap.of("keyspace", "duker", "table", "record"));
 
-        Server server = ServerBuilder.forPort(8080)
+        Server server = ServerBuilder.forPort(18080)
                 .addService(new GreetingServiceImpl(new CassandraJsonWriter(PRODUCER))).build();
 
+
+        DukerZKClient zkClient = null;
 
         System.out.println("Starting server...");
         server.start();
         System.out.println("Server started!");
+
+
+        registerNode(zkClient);
+        electMaster(zkClient);
+
+        com.nebutown.cluster.Cluster cluster = null;
+
         server.awaitTermination();
+    }
+
+    private static void electMaster(DukerZKClient zkClient) {
+        throw new UnsupportedOperationException();
+    }
+
+    private static void registerNode(DukerZKClient zkClient) {
+        throw new UnsupportedOperationException();
     }
 
     private static Cluster initCassandra(Map<String, Object> properties) {
