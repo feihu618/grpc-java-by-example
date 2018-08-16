@@ -1,7 +1,9 @@
 package com.nebutown.cluster;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nebutown.persistency.TxDataBox;
 
 import java.io.IOException;
 import java.util.Map;
@@ -32,5 +34,42 @@ public class Json {
     public static <T> T decodeObject(byte[] bytes, Class<T> glass) throws IOException {
 
         return OBJECT_MAPPER.readValue(bytes, glass);
+    }
+
+    public static String toJson(Object value) {
+        try{
+
+            return encodeAsString(value);
+        } catch (JsonProcessingException e) {
+//            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+
+    }
+
+
+    public static <T> T fromJson(Class<T> type, String data) {
+        try {
+            return OBJECT_MAPPER.readValue(data, type);
+        } catch (Exception e) {
+            throw new RuntimeException("Conversion from JSON failed", e);
+        }
+    }
+
+    public static <T> T fromJson(TypeReference<T> type, String data) {
+        try {
+            return OBJECT_MAPPER.readValue(data, type);
+        } catch (Exception e) {
+            throw new RuntimeException("Conversion from JSON failed", e);
+        }
+    }
+
+    public static Map<String, String> mapFromJson(String o) {
+        try {
+            return OBJECT_MAPPER.readValue(o, new TypeReference<Map<String, String>>() {
+            });
+        } catch (Exception e) {
+            throw new RuntimeException("Conversion from JSON failed", e);
+        }
     }
 }

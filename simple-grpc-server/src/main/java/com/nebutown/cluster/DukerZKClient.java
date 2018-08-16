@@ -51,16 +51,16 @@ public class DukerZKClient {
         return createResponse.getName();
     }
 
-    public void registerBroker(Node.BrokerInfo brokerInfo) {
-        String path = brokerInfo.path();
+    public void registerBroker(Node.NodeInfo nodeInfo) {
+        String path = nodeInfo.path();
 
 
         try {
-            checkedEphemeralCreate(path, brokerInfo.toJsonBytes());
-            LOG.info("Registered broker {} at path {} with addresses: ${brokerInfo.broker.endPoints}", brokerInfo.getBroker().getId(), path);
+            checkedEphemeralCreate(path, nodeInfo.toJsonBytes());
+            LOG.info("Registered broker {} at path {} with addresses: ${brokerInfo.broker.endPoints}", nodeInfo.getBroker().getId(), path);
         } catch (KeeperException e) {
 
-            LOG.error("--- registerBroker:{} failed", brokerInfo, e);
+            LOG.error("--- registerBroker:{} failed", nodeInfo, e);
             throw new RuntimeException("registerBroker failed, please check configuration~");
         }
 
@@ -74,16 +74,16 @@ public class DukerZKClient {
      * @throws KeeperException if an error is returned by ZooKeeper.
      */
     public void registerController(Integer controllerId, Long timestamp) {
-        String path = Cluster.MasterZNode.path();
+        String path = ZKNode.MasterZNode.path();
         try {
-            checkedEphemeralCreate(path, Cluster.MasterZNode.encode(controllerId, timestamp));
+            checkedEphemeralCreate(path, ZKNode.MasterZNode.encode(controllerId, timestamp));
         } catch (KeeperException e) {
             e.printStackTrace();//
             LOG.info("--- The {} registerController falied", controllerId);
         }
     }
 
-    public void updateBrokerInfo(Node.BrokerInfo brokerInfo) {
+    public void updateBrokerInfo(Node.NodeInfo nodeInfo) {
         throw new UnsupportedOperationException();
     }
     
@@ -96,7 +96,7 @@ public class DukerZKClient {
      * @return SetDataResponse
      */
     public ZKClient.SetDataResponse setControllerEpochRaw(Integer epoch, Integer epochZkVersion) {
-        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(Cluster.EpochZNode.path(), Cluster.EpochZNode.encode(epoch), epochZkVersion, null);
+        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(ZKNode.EpochZNode.path(), ZKNode.EpochZNode.encode(epoch), epochZkVersion, null);
         return (ZKClient.SetDataResponse) retryRequestUntilConnected(setDataRequest);
     }
 
@@ -106,8 +106,8 @@ public class DukerZKClient {
      * @return CreateResponse
      */
     public ZKClient.CreateResponse createControllerEpochRaw(Integer epoch) {
-        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(Cluster.EpochZNode.path(), Cluster.EpochZNode.encode(epoch),
-                acls(Cluster.EpochZNode.path()), CreateMode.PERSISTENT, null);
+        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(ZKNode.EpochZNode.path(), ZKNode.EpochZNode.encode(epoch),
+                acls(ZKNode.EpochZNode.path()), CreateMode.PERSISTENT, null);
         return (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
     }
     
@@ -119,14 +119,14 @@ public class DukerZKClient {
     public List<Node> getAllBrokersInCluster() throws KeeperException {
 
         ArrayList<Integer> brokerIds = getSortedBrokerList();
-        ArrayList<ZKClient.GetDataRequest> getDataRequests = brokerIds.stream().map(brokerId -> new ZKClient.GetDataRequest(Node.ZNode.getPath(brokerId), brokerId)).collect(Collectors.toCollection(ArrayList::new));
+        ArrayList<ZKClient.GetDataRequest> getDataRequests = brokerIds.stream().map(brokerId -> new ZKClient.GetDataRequest(ZKNode.NodesZNode.getPath(brokerId), brokerId)).collect(Collectors.toCollection(ArrayList::new));
         ArrayList<ZKClient.AsyncResponse> getDataResponses = retryRequestsUntilConnected(getDataRequests);
 
         final List<Node> nodeList = getDataResponses.stream().map(getDataResponse -> {
             Integer brokerId = (Integer) getDataResponse.getCtx().get();
             switch (getDataResponse.getResultCode()) {
                 case OK:
-                    return Node.ZNode.decode(brokerId, ((ZKClient.GetDataResponse) getDataResponse).getData()).getBroker();
+                    return ZKNode.NodesZNode.decode(brokerId, ((ZKClient.GetDataResponse) getDataResponse).getData()).getBroker();
                 case NONODE:
                 default:
                     return null;
@@ -144,11 +144,11 @@ public class DukerZKClient {
      * @return an optional Broker
      */
     public Optional<Node> getBroker(Integer brokerId) throws KeeperException {
-        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Node.ZNode.getPath(brokerId), null);
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.NodesZNode.getPath(brokerId), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
-                return Optional.ofNullable(Node.ZNode.decode(brokerId, getDataResponse.data)).map(Node.BrokerInfo::getBroker);
+                return Optional.ofNullable(ZKNode.NodesZNode.decode(brokerId, getDataResponse.data)).map(Node.NodeInfo::getBroker);
             case NONODE:
                 return Optional.empty();
             default:
@@ -161,7 +161,7 @@ public class DukerZKClient {
      */
     public ArrayList<Integer> getSortedBrokerList() throws KeeperException {
 
-        return getChildren(Node.ZNode.getPath()).stream().mapToInt(Integer::parseInt).sorted().boxed().collect(Collectors.toCollection(ArrayList::new));
+        return getChildren(ZKNode.NodesZNode.getPath()).stream().mapToInt(Integer::parseInt).sorted().boxed().collect(Collectors.toCollection(ArrayList::new));
 
     }
 
@@ -249,11 +249,11 @@ public class DukerZKClient {
      * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
      */
     public Optional<Integer> getControllerId() throws KeeperException {
-        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Cluster.MasterZNode.path(), null);
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.MasterZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
-                Cluster.MasterZNode.decode(getDataResponse.getData());
+                ZKNode.MasterZNode.decode(getDataResponse.getData());
             case NONODE:
                 return Optional.empty();
             default:
@@ -273,11 +273,11 @@ public class DukerZKClient {
      * @return optional (Integer, Stat) that is Some if the controller epoch path exists and None otherwise.
      */
     public Optional<Tuple<Integer, Stat>> getControllerEpoch() throws KeeperException {
-        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(Cluster.EpochZNode.path(), null);
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.EpochZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch(getDataResponse.getResultCode()) {
             case OK:
-                int epoch = Cluster.EpochZNode.decode(getDataResponse.getData());
+                int epoch = ZKNode.EpochZNode.decode(getDataResponse.getData());
                 return Optional.of(Tuple.of(epoch, getDataResponse.getStat()));
             case NONODE:
                 return Optional.empty();
@@ -383,7 +383,7 @@ public class DukerZKClient {
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
-                return Optional.ofNullable(Cluster.ClusterZNode.fromJson(getDataResponse.getData())).map(map -> map.get("id"));
+                return Optional.ofNullable(ZKNode.ClusterZNode.fromJson(getDataResponse.getData())).map(map -> map.get("id"));
             case NONODE:
                 return Optional.empty();
             default: throw getDataResponse.getResultException();
@@ -396,7 +396,7 @@ public class DukerZKClient {
      */
     public String createOrGetClusterId(String proposedClusterId) {
         try {
-            createRecursive(CLUSTER_ID, Cluster.ClusterZNode.toJson(proposedClusterId), true);
+            createRecursive(CLUSTER_ID, ZKNode.ClusterZNode.toJson(proposedClusterId), true);
             return proposedClusterId;
         } catch (Exception e){
             throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");

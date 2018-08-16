@@ -9,42 +9,20 @@ public class Node {
         return id;
     }
 
-    public static class BrokerInfo {
+    public static class NodeInfo {
         private Node node;
         public String path(){
 
-            return ZNode.getPath(node.id);
+            return ZKNode.NodesZNode.getPath(node.id);
         }
         public byte[] toJsonBytes(){
 
-            return ZNode.encode(this);
+            return ZKNode.NodesZNode.encode(this);
         }
 
         public Node getBroker() {
             return node;
         }
-    }
-
-    public static class ZNode{
-        public static String getPath() {
-
-            throw new UnsupportedOperationException();
-        }
-        public static String getPath(int id) {
-
-            throw new UnsupportedOperationException();
-        }
-
-        public static byte[] encode(BrokerInfo brokerInfo) {
-
-            throw new UnsupportedOperationException();
-        }
-
-        public static BrokerInfo decode(Integer brokerId, byte[] data) {
-
-            throw new UnsupportedOperationException();
-        }
-
     }
 
 }
