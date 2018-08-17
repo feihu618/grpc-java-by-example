@@ -1,20 +1,31 @@
 package com.nebutown.cluster;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.Map;
 
 public class ZKNode {
     private static final Logger LOG = LoggerFactory.getLogger(ZKNode.class);
 
     static class ClusterZNode{
-        private static final String CLUSTER_ID = "/cluster/id/"+Config.getProperty("cluster_id");
+        private static final String BASE_PATH = "/clusters";
+
+        static String getBasePath() {
+
+            return BASE_PATH;
+        }
+        @Deprecated
         static String path() {
-            return CLUSTER_ID;
+            return path(Config.getInstance().getClusterName());
+        }
+
+        static String path(String name) {
+
+            return BASE_PATH +"/"+name;
         }
 
          static byte[] toJson(String id) {
@@ -27,20 +38,17 @@ public class ZKNode {
 
          static Map<String, String> fromJson(byte[] bytes) {
 
-            try {
-                return Json.decodeObject(bytes, Map.class);
-            } catch (IOException e) {
-//                e.printStackTrace();
-                LOG.error("--- fatal error: decodeObject:");
-            }
+             return Json.fromJson(new TypeReference<Map<String, String>>() {
+             }, bytes);
 
-            return null;
         }
     }
 
     static class NodesZNode{
 
         static final String PATH = "/nodes";
+
+        static final String NODES_SEQ_ID = PATH+"/seqid";
 
          static String getPath() {
 
@@ -52,10 +60,19 @@ public class ZKNode {
             return getPath()+"/"+id;
         }
 
+        static String getSeqIdPath() {
+             return ClusterZNode.path()+NODES_SEQ_ID;
+        }
+
          static byte[] encode(Node.NodeInfo nodeInfo) {
 
-            throw new UnsupportedOperationException();
-        }
+             try {
+                 return Json.encodeAsBytes(nodeInfo);
+             } catch (JsonProcessingException e) {
+                 e.printStackTrace();
+                 throw new RuntimeException("--- encodeAsBytes:" + nodeInfo + " failed");
+             }
+         }
 
          static Node.NodeInfo decode(Integer nodeId, byte[] data) {
 
@@ -81,9 +98,11 @@ public class ZKNode {
 
     static class EpochZNode{
 
+        static final String PATH = "/master_epoch";
 
          static String path() {
-            throw new UnsupportedOperationException();
+
+             return ClusterZNode.path()+"/"+PATH;
         }
 
          static byte[] encode(Integer epoch) {

@@ -63,6 +63,14 @@ public class Json {
         }
     }
 
+    public static <T> T fromJson(TypeReference<T> type, byte[] data) {
+        try {
+            return OBJECT_MAPPER.readValue(data, type);
+        } catch (Exception e) {
+            throw new RuntimeException("Conversion from JSON failed", e);
+        }
+    }
+
     public static Map<String, String> mapFromJson(String o) {
         try {
             return OBJECT_MAPPER.readValue(o, new TypeReference<Map<String, String>>() {

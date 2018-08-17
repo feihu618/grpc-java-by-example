@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static com.nebutown.cluster.ZKNode.NodesZNode.getSeqIdPath;
 import static org.apache.zookeeper.KeeperException.Code.NONODE;
 import static org.apache.zookeeper.KeeperException.Code.OK;
 
@@ -24,15 +25,16 @@ public class DukerZKClient {
     private static final int UnknownVersion = -2;  // Version returned from get if node does not exist (internal constant for Kafka codebase, unused value in ZK)
 
     private static final Stat  NoStat = new Stat();
-    private static final String NODES_SEQ_ID = "nodes/seqid";
-    private static final String CLUSTER_ID = "cluster/id";
 
 
     private ZKClient zkClient;
     private boolean isSecure;
     private List<String> sensitiveRootPaths = Collections.emptyList();
 
-    public DukerZKClient() { }
+    public DukerZKClient(ZKClient zkClient, boolean isSecure) {
+        this.zkClient = zkClient;
+        this.isSecure = isSecure;
+    }
     
 
     /**
@@ -51,18 +53,10 @@ public class DukerZKClient {
         return createResponse.getName();
     }
 
-    public void registerBroker(Node.NodeInfo nodeInfo) {
+
+    public void registerBroker(Node.NodeInfo nodeInfo) throws KeeperException {
         String path = nodeInfo.path();
-
-
-        try {
-            checkedEphemeralCreate(path, nodeInfo.toJsonBytes());
-            LOG.info("Registered broker {} at path {} with addresses: ${brokerInfo.broker.endPoints}", nodeInfo.getBroker().getId(), path);
-        } catch (KeeperException e) {
-
-            LOG.error("--- registerBroker:{} failed", nodeInfo, e);
-            throw new RuntimeException("registerBroker failed, please check configuration~");
-        }
+        checkedEphemeralCreate(path, nodeInfo.toJsonBytes());
 
     }
 
@@ -73,14 +67,9 @@ public class DukerZKClient {
      * @param timestamp the timestamp of the controller election.
      * @throws KeeperException if an error is returned by ZooKeeper.
      */
-    public void registerController(Integer controllerId, Long timestamp) {
+    public void registerController(Integer controllerId, Long timestamp) throws KeeperException {
         String path = ZKNode.MasterZNode.path();
-        try {
-            checkedEphemeralCreate(path, ZKNode.MasterZNode.encode(controllerId, timestamp));
-        } catch (KeeperException e) {
-            e.printStackTrace();//
-            LOG.info("--- The {} registerController falied", controllerId);
-        }
+        checkedEphemeralCreate(path, ZKNode.MasterZNode.encode(controllerId, timestamp));
     }
 
     public void updateBrokerInfo(Node.NodeInfo nodeInfo) {
@@ -126,7 +115,7 @@ public class DukerZKClient {
             Integer brokerId = (Integer) getDataResponse.getCtx().get();
             switch (getDataResponse.getResultCode()) {
                 case OK:
-                    return ZKNode.NodesZNode.decode(brokerId, ((ZKClient.GetDataResponse) getDataResponse).getData()).getBroker();
+                    return ZKNode.NodesZNode.decode(brokerId, ((ZKClient.GetDataResponse) getDataResponse).getData()).build();
                 case NONODE:
                 default:
                     return null;
@@ -143,16 +132,18 @@ public class DukerZKClient {
      * Get a broker from ZK
      * @return an optional Broker
      */
-    public Optional<Node> getBroker(Integer brokerId) throws KeeperException {
+    public Optional<Node> getBroker(Integer brokerId) {
         ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.NodesZNode.getPath(brokerId), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
+
         switch (getDataResponse.getResultCode()){
             case OK:
-                return Optional.ofNullable(ZKNode.NodesZNode.decode(brokerId, getDataResponse.data)).map(Node.NodeInfo::getBroker);
+                return Optional.ofNullable(ZKNode.NodesZNode.decode(brokerId, getDataResponse.data)).map(Node.NodeInfo::build);
             case NONODE:
                 return Optional.empty();
             default:
-                throw getDataResponse.getResultException();
+                LOG.warn("--- build:{} happen exception", brokerId, getDataResponse.getResultException());
+                return Optional.empty();
         }
     }
 
@@ -248,7 +239,7 @@ public class DukerZKClient {
      * Gets the controller id.
      * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
      */
-    public Optional<Integer> getControllerId() throws KeeperException {
+    public Optional<Integer> getControllerId() {
         ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.MasterZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
@@ -257,9 +248,12 @@ public class DukerZKClient {
             case NONODE:
                 return Optional.empty();
             default:
-                throw getDataResponse.getResultException();
+                LOG.warn("--- getControllerId happen exception", getDataResponse.getResultException());
+                return Optional.empty();
         }
     }
+
+
 
     /**
      * Deletes the controller znode.
@@ -392,7 +386,7 @@ public class DukerZKClient {
      * @return optional cluster id in String.
      */
     public Optional<String> getClusterId() throws KeeperException {
-        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(CLUSTER_ID, null);
+        ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.ClusterZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
@@ -409,7 +403,7 @@ public class DukerZKClient {
      */
     public String createOrGetClusterId(String proposedClusterId) {
         try {
-            createRecursive(CLUSTER_ID, ZKNode.ClusterZNode.toJson(proposedClusterId), true);
+            createRecursive(ZKNode.ClusterZNode.path(), ZKNode.ClusterZNode.toJson(proposedClusterId), true);
             return proposedClusterId;
         } catch (Exception e){
             throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");
@@ -422,14 +416,14 @@ public class DukerZKClient {
      * @return sequence number as the broker id
      */
     public int generateBrokerSequenceId() throws KeeperException {
-        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(NODES_SEQ_ID, new byte[0], MatchAnyVersion, null);
+        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(getSeqIdPath(), new byte[0], MatchAnyVersion, null);
         ZKClient.SetDataResponse setDataResponse = (ZKClient.SetDataResponse) retryRequestUntilConnected(setDataRequest);
         switch (setDataResponse.getResultCode()){
             case OK:
                 return setDataResponse.getStat().getVersion();
             case NONODE:
                 // maker sure the path exists
-                createRecursive(NODES_SEQ_ID, new byte[0], false);
+                createRecursive(getSeqIdPath(), new byte[0], false);
                 generateBrokerSequenceId();
 
             default:
@@ -509,9 +503,9 @@ public class DukerZKClient {
             createRecursive0(parentPath(path));
             createResponse = (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
             if (throwIfPathExists || createResponse.resultCode != Code.NODEEXISTS)
-                throw KeeperException.create(createResponse.getResultCode(), createResponse.getPath());
+                createResponse.maybeThrow();
         } else if (createResponse.resultCode != Code.NODEEXISTS)
-            throw KeeperException.create(createResponse.getResultCode(), createResponse.getPath());
+            createResponse.maybeThrow();
 
     }
 
@@ -565,7 +559,7 @@ public class DukerZKClient {
 
                 remainingRequests.clear();
 
-                IntStream.range(0, responses.size())
+                IntStream.range(0, batchResponses.size())
                         .forEach(i -> {
 
                             ZKClient.AsyncResponse response = batchResponses.get(i);
@@ -592,7 +586,7 @@ public class DukerZKClient {
         return responses;
     }
 
-    private void checkedEphemeralCreate(String path, byte[] data) throws KeeperException {
+    protected void checkedEphemeralCreate(String path, byte[] data) throws KeeperException {
         CheckedEphemeral checkedEphemeral = new CheckedEphemeral(path, data);
         LOG.info("Creating {} (is it secure? {})",path, isSecure);
         KeeperException.Code code = checkedEphemeral.create();

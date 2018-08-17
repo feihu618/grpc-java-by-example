@@ -10,6 +10,7 @@ public class Master {
     private Node.NodeInfo nodeInfo;
     private ZKClient.ZNodeChangeHandler masterChangeHandler = null;
     Integer activeControllerId;
+    private Config config;
 
     public void startUp() {
 
@@ -32,7 +33,13 @@ public class Master {
                     e.printStackTrace();
                     throw new RuntimeException("--- Can't register masterChangeHandler~", e);
                 }
-                zkClient.registerBroker(nodeInfo);
+
+                try {
+                    zkClient.registerBroker(nodeInfo);
+                } catch (KeeperException e) {
+                    LOG.error("--- registerBroker:{} failed", nodeInfo, e);
+                    throw new RuntimeException("registerBroker failed, please check configuration~");
+                }
 
                 elect();
             }
@@ -59,24 +66,24 @@ public class Master {
             return;
         }
 
-            zkClient.registerController(config.brokerId, timestamp);
-            LOG.info("${config.brokerId} successfully elected as the controller");
-            activeControllerId = config.brokerId;
+            zkClient.registerController(config.getNodeId(), timestamp);
+            LOG.info("${config.nodeId} successfully elected as the controller");
+            activeControllerId = config.getNodeId();
             onElectSuccess();
         } catch (KeeperException.NodeExistsException e){
                 // If someone else has written the path, then
                 activeControllerId = zkClient.getControllerId().orElse(-1);
 
                 if (activeControllerId != -1)
-                    LOG.debug("Broker $activeControllerId was elected as controller instead of broker ${config.brokerId}")
+                    LOG.debug("Broker $activeControllerId was elected as controller instead of broker ${config.nodeId}");
                 else
                     LOG.warn("A controller has been elected but just resigned, this will result in another round of election");
 
         } catch (Throwable t){
 
 
-                LOG.error("Error while electing or becoming controller on broker ${config.brokerId}", t);
-                triggerControllerMove();
+                LOG.error("Error while electing or becoming controller on broker ${config.nodeId}", t);
+//                triggerControllerMove();
         }
     }
 

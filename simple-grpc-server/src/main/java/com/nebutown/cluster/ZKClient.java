@@ -702,6 +702,11 @@ public class ZKClient {
             return getResultCode() == Code.OK ? null : KeeperException.create(getResultCode(), getPath());
         }
 
+        public default void maybeThrow() throws KeeperException {
+            if (Code.OK != getResultCode())
+                throw KeeperException.create(getResultCode(), getPath());
+        }
+
 
         public ResponseMetadata getMetadata();
     }
