@@ -401,12 +401,15 @@ public class DukerZKClient {
      * Create the cluster Id. If the cluster id already exists, return the current cluster id.
      * @return  cluster id
      */
-    public String createOrGetClusterId(String proposedClusterId) {
+    public String createOrGetCluster(String clusterNameSpace) {
         try {
-            createRecursive(ZKNode.ClusterZNode.path(), ZKNode.ClusterZNode.toJson(proposedClusterId), true);
-            return proposedClusterId;
-        } catch (Exception e){
-            throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");
+            createRecursive(ZKNode.ClusterZNode.path(clusterNameSpace), ZKNode.ClusterZNode.toJson(), true);
+            return clusterNameSpace;
+        } catch (KeeperException e){
+            if (e instanceof KeeperException.NodeExistsException)
+                return clusterNameSpace;
+            else
+                throw new RuntimeException("Failed to get cluster id from Zookeeper. This can happen if /cluster/id is deleted from Zookeeper.");
         }
     }
 
@@ -432,6 +435,11 @@ public class DukerZKClient {
     }
 
 
+    public void makeSurePersistentPathsExists(String... paths) throws KeeperException {
+
+        for(String path : paths)
+            makeSurePersistentPathExists(path);
+    }
 
     /**
      * Make sure a persistent path exists in ZK.

@@ -18,7 +18,7 @@ public class ZKNode {
 
             return BASE_PATH;
         }
-        @Deprecated
+
         static String path() {
             return path(Config.getInstance().getClusterName());
         }
@@ -28,9 +28,9 @@ public class ZKNode {
             return BASE_PATH +"/"+name;
         }
 
-         static byte[] toJson(String id) {
+         static byte[] toJson() {
             try {
-                return Json.encodeAsBytes(ImmutableMap.of("version","1", "id", id));
+                return Json.encodeAsBytes(ImmutableMap.of("version","1"));
             } catch (JsonProcessingException e) {
                 throw new RuntimeException("--- fatal error: Json.encodeAsBytes:");
             }
@@ -87,6 +87,11 @@ public class ZKNode {
              return ClusterZNode.path() + "/" + "master";
         }
 
+        static String getPath(int id) {
+
+            return path()+"/"+id;
+        }
+
          static byte[] encode(Integer masterId, Long timestamp) {
             throw new UnsupportedOperationException();
         }
@@ -98,11 +103,11 @@ public class ZKNode {
 
     static class EpochZNode{
 
-        static final String PATH = "/master_epoch";
+        static final String PATH = "/epoch";
 
          static String path() {
 
-             return ClusterZNode.path()+"/"+PATH;
+             return MasterZNode.path()+"/"+PATH;
         }
 
          static byte[] encode(Integer epoch) {
@@ -110,6 +115,40 @@ public class ZKNode {
         }
 
          static int decode(byte[] data) {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+    static class BranchesZNode{
+
+        static final String PATH = "/branches";
+
+        static String path() {
+
+            return MasterZNode.path()+"/"+PATH;
+        }
+
+        static String getDataPath(Integer epoch) {
+
+            return path()+"/"+epoch+"_data";
+        }
+
+        static String getBallotPath(Integer epoch){
+
+            return path()+"/"+epoch+"_ballot";
+        }
+
+
+        static String getCommitStatPath(Integer epoch){
+
+            return path()+"/"+epoch+"_commit_stat";
+        }
+
+        static byte[] encode(Integer epoch) {
+            throw new UnsupportedOperationException();
+        }
+
+        static int decode(byte[] data) {
             throw new UnsupportedOperationException();
         }
     }
