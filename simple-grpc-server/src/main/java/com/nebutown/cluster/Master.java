@@ -4,13 +4,24 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+
 public class Master {
     private static final Logger LOG = LoggerFactory.getLogger(Master.class);
     private DukerZKClient zkClient;
     private Node.NodeInfo nodeInfo;
     private ZKClient.ZNodeChangeHandler masterChangeHandler = null;
-    Integer activeControllerId;
+    private int activeControllerId;
+    private int epoch;
     private Config config;
+
+    public Master(DukerZKClient dukerZKClient, Config config) {
+        this.zkClient = dukerZKClient;
+        this.config = config;
+        this.nodeInfo = config.getNode();
+        this.activeControllerId = -1;
+
+    }
 
     public void startUp() {
 
@@ -29,19 +40,16 @@ public class Master {
             public void afterInitializingSession() {
                 try {
                     zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
+                    zkClient.registerBroker(nodeInfo);
+
+                    elect();
                 } catch (KeeperException e) {
                     e.printStackTrace();
                     throw new RuntimeException("--- Can't register masterChangeHandler~", e);
                 }
 
-                try {
-                    zkClient.registerBroker(nodeInfo);
-                } catch (KeeperException e) {
-                    LOG.error("--- registerBroker:{} failed", nodeInfo, e);
-                    throw new RuntimeException("registerBroker failed, please check configuration~");
-                }
 
-                elect();
+
             }
         });
     }
@@ -87,17 +95,144 @@ public class Master {
         }
     }
 
+    public boolean isMaster() {
+
+        return activeControllerId == nodeInfo.getId();
+    }
+
     public void reElect() {
 
     }
 
     void onElectSuccess() {
-
+//        List<Integer> childrenIds = zkClient.getSortedBrokerList();
     }
 
     void onElectFail() {
 
     }
+
+    void onMasterChange() {
+        boolean wasMasterBeforeChange = isMaster();
+        try {
+            zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
+        } catch (KeeperException e) {
+            LOG.error("happer error when register handler:", e);
+        }
+        activeControllerId = zkClient.getControllerId().orElse(-1);
+        if (wasMasterBeforeChange && !isMaster()) {
+            onMasterResignation();
+        }
+    }
+
+    void onChildChange() {
+
+    }
+
+    void onViewChanged() {
+        //update epoch value
+        epoch = -2;
+        //get data from getDataPath
+        //put record into BallotPath
+        //register handler for CommitStat
+    }
+
+    void onBrachCommit() {
+
+        //notify Cluster upgrade finish
+    }
+
+    private void onMasterResignation() {
+
+    }
+
+
+    class NodeChangeHandler implements ZKClient.ZNodeChildChangeHandler {
+
+        @Override
+        public String getPath() {
+            return ZKNode.NodesZNode.getPath();
+        }
+
+        @Override
+        public void handleChildChange() {
+
+            onChildChange();
+        }
+    }
+
+
+    //for slave
+    class BranchCommitHandler implements ZKClient.ZNodeChangeHandler{
+
+        @Override
+        public String getPath() {
+            return ZKNode.BranchesZNode.getCommitStatPath(epoch);
+        }
+
+        @Override
+        public void handleCreation() {
+            //ignore
+        }
+
+        @Override
+        public void handleDeletion() {
+            //ignore
+        }
+
+        @Override
+        public void handleDataChange() {
+            onBrachCommit();
+        }
+    }
+
+
+    //for slave
+    class EpochHandler implements ZKClient.ZNodeChangeHandler {
+
+        @Override
+        public String getPath() {
+            return ZKNode.EpochZNode.path();
+        }
+
+        @Override
+        public void handleCreation() {
+            //ignore
+        }
+
+        @Override
+        public void handleDeletion() {
+            //TODO: recreate path
+        }
+
+        @Override
+        public void handleDataChange() {
+            onViewChanged();
+        }
+    }
+
+    class MasterChangeHandler implements ZKClient.ZNodeChangeHandler {
+        @Override
+        public String getPath() {
+            return ZKNode.MasterZNode.path();
+        }
+
+        @Override
+        public void handleCreation() {
+            onMasterChange();
+        }
+
+        @Override
+        public void handleDeletion() {
+            reElect();
+        }
+
+        @Override
+        public void handleDataChange() {
+            onMasterChange();
+        }
+    }
+
 
 
 

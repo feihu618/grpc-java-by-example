@@ -26,7 +26,7 @@ public class Config {
     private static final Config INSTANCE;
 
     private String clusterName;
-    private Integer nodeId;
+    private Node.NodeInfo node;
 
     public String getClusterName() {
         return clusterName;
@@ -36,12 +36,15 @@ public class Config {
         this.clusterName = clusterName;
     }
 
-    public Integer getNodeId() {
-        return nodeId;
+    public Node.NodeInfo getNode() {
+        return node;
     }
 
-    public void setNodeId(Integer nodeId) {
-        this.nodeId = nodeId;
+    public void setNode(Node.NodeInfo node) {
+        this.node = node;
     }
 
+    public int getNodeId() {
+        return node.getId();
+    }
 }

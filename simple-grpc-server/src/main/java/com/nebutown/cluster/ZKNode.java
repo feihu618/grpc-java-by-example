@@ -87,6 +87,7 @@ public class ZKNode {
              return ClusterZNode.path() + "/" + "master";
         }
 
+
         static String getPath(int id) {
 
             return path()+"/"+id;
@@ -107,7 +108,7 @@ public class ZKNode {
 
          static String path() {
 
-             return MasterZNode.path()+"/"+PATH;
+             return ClusterZNode.path()+"/"+PATH;
         }
 
          static byte[] encode(Integer epoch) {
@@ -125,7 +126,7 @@ public class ZKNode {
 
         static String path() {
 
-            return MasterZNode.path()+"/"+PATH;
+            return ClusterZNode.path()+PATH;
         }
 
         static String getDataPath(Integer epoch) {

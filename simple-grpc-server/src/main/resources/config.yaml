@@ -1,2 +1,10 @@
 clusterName: 1
-nodeId: 1
+node:
+    id: 1
+    host: localhost
+    port: 8989
+    jmxPort: 9001
+    version: 1
+    option:
+      name: admin
+      password: 123456

@@ -128,12 +128,12 @@ public class ZKClient {
             CountDownLatch countDownLatch = new CountDownLatch(requests.size());
             ArrayBlockingQueue<AsyncResponse> responseQueue = new ArrayBlockingQueue<>(requests.size());
 
-
+            ReentrantReadWriteLock.ReadLock readLock = null;
             for (AsyncRequest request : requests) {
 
                 inFlightRequests.acquire();
                 try {
-                        ReentrantReadWriteLock.ReadLock readLock = initializationLock.readLock();
+                        readLock = initializationLock.readLock();
                         readLock.lock();
                         send(request, asyncResponse -> {
 
@@ -147,6 +147,7 @@ public class ZKClient {
                     }catch(Throwable e) {
 
                     inFlightRequests.release();
+                    readLock.unlock();
                     throw e;
                 }
             }

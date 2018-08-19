@@ -15,7 +15,7 @@ public class DukerZKClientTest {
 
         final String cluster = dukerZKClient.createOrGetCluster("test01");
         Config.getInstance().setClusterName(cluster);
-        dukerZKClient.makeSurePersistentPathsExists(ZKNode.NodesZNode.getPath(), ZKNode.MasterZNode.path(), ZKNode.BranchesZNode.path());
+        dukerZKClient.makeSurePersistentPathsExists(ZKNode.NodesZNode.getPath(), ZKNode.BranchesZNode.path());
 
     }
 
@@ -28,14 +28,7 @@ public class DukerZKClientTest {
 
     @Test
     public void registerBroker() {
-        Node.NodeInfo nodeInfo = new Node.NodeInfo();
-
-        nodeInfo.setId(1);
-        nodeInfo.setHost("localhost");
-        nodeInfo.setPort(8989);
-        nodeInfo.setJmxPort(9001);
-        nodeInfo.setOption(ImmutableMap.of("auth","123456"));
-        nodeInfo.setVersion(1);
+        Node.NodeInfo nodeInfo = Config.getInstance().getNode();
 
 
         try {
@@ -45,7 +38,13 @@ public class DukerZKClientTest {
         }
 
         try {
-            Thread.currentThread().join();
+            System.out.println(dukerZKClient.getSortedBrokerList());
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            Thread.currentThread().join(1000*60*5);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
