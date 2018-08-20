@@ -6,6 +6,8 @@ import com.google.common.collect.ImmutableMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 public class ZKNode {
@@ -139,17 +141,28 @@ public class ZKNode {
             return path()+"/"+epoch+"_ballot";
         }
 
+        static String getBallotPath(Integer epoch, Integer nodeId){
+
+            return getBallotPath(epoch)+"/"+nodeId;
+        }
+
 
         static String getCommitStatPath(Integer epoch){
 
             return path()+"/"+epoch+"_commit_stat";
         }
 
-        static byte[] encode(Integer epoch) {
+
+
+        static byte[] encode(List<Integer> nodeIds) {
             throw new UnsupportedOperationException();
         }
 
-        static int decode(byte[] data) {
+        static ArrayList<Integer> decode(byte[] data) {
+            throw new UnsupportedOperationException();
+        }
+
+        public static byte[] encode(boolean status) {
             throw new UnsupportedOperationException();
         }
     }

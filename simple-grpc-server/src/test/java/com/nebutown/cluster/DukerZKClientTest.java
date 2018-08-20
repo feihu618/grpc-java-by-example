@@ -1,6 +1,7 @@
 package com.nebutown.cluster;
 
 import com.google.common.collect.ImmutableMap;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.junit.After;
 import org.junit.Before;
@@ -43,6 +44,25 @@ public class DukerZKClientTest {
             e.printStackTrace();
         }
 
+        try {
+            Thread.currentThread().join(1000*60*5);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Test
+    public void createSequentialPath() {
+        try {
+            dukerZKClient.makeSurePersistentPathsExists(ZKNode.BranchesZNode.getBallotPath(1, 1));
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        }
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "a".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "m".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "b".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
         try {
             Thread.currentThread().join(1000*60*5);
         } catch (InterruptedException e) {

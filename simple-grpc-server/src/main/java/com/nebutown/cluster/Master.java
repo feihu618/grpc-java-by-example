@@ -1,21 +1,33 @@
 package com.nebutown.cluster;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.*;
+import java.util.function.Function;
 
 public class Master {
     private static final Logger LOG = LoggerFactory.getLogger(Master.class);
+    private final ScheduledExecutorService eventDispatcher;
     private DukerZKClient zkClient;
     private Node.NodeInfo nodeInfo;
     private ZKClient.ZNodeChangeHandler masterChangeHandler = null;
+    private ZKClient.ZNodeChangeHandler epochHandler = null;
+    private ZKClient.ZNodeChangeHandler branchCommitHandler = null;
+    private volatile CompletableFuture<Void> ballotCountFuture = null;
+    private ArrayList<Integer> nodeIds = null;
     private int activeControllerId;
     private int epoch;
     private Config config;
 
     public Master(DukerZKClient dukerZKClient, Config config) {
+        this.eventDispatcher = Executors.newScheduledThreadPool(1, new ThreadFactoryBuilder().setNameFormat("Event-Dispatcher-%d").build());
         this.zkClient = dukerZKClient;
         this.config = config;
         this.nodeInfo = config.getNode();
@@ -40,6 +52,7 @@ public class Master {
             public void afterInitializingSession() {
                 try {
                     zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
+                    zkClient.registerZNodeChangeHandlerAndCheckExistence(epochHandler);
                     zkClient.registerBroker(nodeInfo);
 
                     elect();
@@ -47,9 +60,6 @@ public class Master {
                     e.printStackTrace();
                     throw new RuntimeException("--- Can't register masterChangeHandler~", e);
                 }
-
-
-
             }
         });
     }
@@ -62,7 +72,7 @@ public class Master {
         long timestamp = System.currentTimeMillis();
 
         try {
-            activeControllerId = zkClient.getControllerId().orElse(-1);
+            activeControllerId = zkClient.getMasterId().orElse(-1);
         /*
          * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition,
          * it's possible that the controller has already been elected when we get here. This check will prevent the following
@@ -74,13 +84,13 @@ public class Master {
             return;
         }
 
-            zkClient.registerController(config.getNodeId(), timestamp);
+            zkClient.registerMaster(config.getNodeId(), timestamp);
             LOG.info("${config.nodeId} successfully elected as the controller");
             activeControllerId = config.getNodeId();
             onElectSuccess();
         } catch (KeeperException.NodeExistsException e){
                 // If someone else has written the path, then
-                activeControllerId = zkClient.getControllerId().orElse(-1);
+                activeControllerId = zkClient.getMasterId().orElse(-1);
 
                 if (activeControllerId != -1)
                     LOG.debug("Broker $activeControllerId was elected as controller instead of broker ${config.nodeId}");
@@ -105,11 +115,83 @@ public class Master {
     }
 
     void onElectSuccess() {
-//        List<Integer> childrenIds = zkClient.getSortedBrokerList();
+        try {
+
+            List<Integer> childrenIds = zkClient.getSortedBrokerList();
+            Optional<Tuple<Integer, Stat>> epoch = zkClient.getMasterEpoch();
+
+            incrementMasterEpoch();
+
+        } catch (KeeperException e) {
+
+            //TODO: if SessionExpire, ignore, others throw IllegalStateException
+            LOG.warn("--- onElectSuccess happen KeeperException ", e);
+        } catch (Throwable t) {
+            //TODO:
+            LOG.warn("--- onElectSuccess happen Throwable ", t);
+        }
+    }
+
+    private void incrementMasterEpoch() throws KeeperException {
+
+        //TODO: incrementMasterEpoch
+        List<Integer> childrenIds = zkClient.getSortedBrokerList();
+        createBranchAndCommit(childrenIds);
+        throw new UnsupportedOperationException();
+    }
+
+    private void createBranchAndCommit(List<Integer> childrenIds) throws KeeperException {
+
+        zkClient.createBranch(epoch, childrenIds, System.currentTimeMillis());
+
+        //poll count of children
+        ballotCountFuture = scheduleAtFixedRate(()->{
+
+            int checkedSize = -1;
+            if (childrenIds.size() == checkedSize){
+
+                try {
+
+                    zkClient.commitBranch(epoch);
+                    if (ballotCountFuture != null)
+                        ballotCountFuture.cancel(false);
+                } catch (KeeperException e) {
+//                    e.printStackTrace();
+                    LOG.warn("--- commitBranch happen exception:", e);
+                }
+            }
+
+        }, 200);
+
+        within(ballotCountFuture, 1000*60).handle((v, th) -> {
+
+            if (th instanceof TimeoutException) {
+
+                eventDispatcher.schedule(Master.this::onIncrementMasterEpochFailed, 50, TimeUnit.MILLISECONDS);
+            }
+
+            return null;
+        });
+
+    }
+
+    void onIncrementMasterEpochFailed() {
+        try {
+            incrementMasterEpoch();
+        } catch (KeeperException e) {
+//            e.printStackTrace();
+            LOG.warn("--- incrementMasterEpoch happen exception:", e);
+        }
     }
 
     void onElectFail() {
 
+        try {
+            Optional<Tuple<Integer, Stat>> epoch = zkClient.getMasterEpoch();
+            zkClient.registerZNodeChangeHandler(branchCommitHandler);//
+        } catch (KeeperException e) {
+            e.printStackTrace();
+        }
     }
 
     void onMasterChange() {
@@ -117,29 +199,59 @@ public class Master {
         try {
             zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
         } catch (KeeperException e) {
-            LOG.error("happer error when register handler:", e);
+            LOG.error("happen error when register handler:", e);
         }
-        activeControllerId = zkClient.getControllerId().orElse(-1);
+        activeControllerId = zkClient.getMasterId().orElse(-1);
         if (wasMasterBeforeChange && !isMaster()) {
             onMasterResignation();
         }
     }
 
-    void onChildChange() {
+    void onNodeChange() {
 
+        //TODO: performance
+        try {
+            incrementMasterEpoch();
+        } catch (KeeperException e) {
+            LOG.error("--- onNodeChange happen error when register handler:", e);
+        }
     }
 
     void onViewChanged() {
         //update epoch value
         epoch = -2;
-        //get data from getDataPath
-        //put record into BallotPath
-        //register handler for CommitStat
+        Cluster.getInstance().pause();
+
     }
 
-    void onBrachCommit() {
+    void onBranchCreated() {
+
+
+        try {
+            //get data from getDataPath
+            nodeIds = zkClient.getBranchData(epoch);
+            //put record into BallotPath
+            zkClient.updateBranch(epoch, nodeInfo.getId());
+        } catch (KeeperException e) {
+            LOG.error("--- onNodeChange happen error when register handler:", e);
+        }
+
+    }
+
+    void onBranchCommit() {
 
         //notify Cluster upgrade finish
+        try {
+
+            List<Node> nodes = zkClient.getAllNodesInCluster(() -> nodeIds);
+            Cluster.getInstance().upgrade(nodes);
+
+            //unregister handler for CommitStat
+            zkClient.unregisterZNodeChangeHandler(ZKNode.BranchesZNode.getCommitStatPath(epoch));
+        } catch (KeeperException e) {
+            LOG.error("--- onNodeChange happen error when register handler:", e);
+        }
+
     }
 
     private void onMasterResignation() {
@@ -156,8 +268,7 @@ public class Master {
 
         @Override
         public void handleChildChange() {
-
-            onChildChange();
+            eventDispatcher.schedule(Master.this::onNodeChange, 0, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -172,7 +283,8 @@ public class Master {
 
         @Override
         public void handleCreation() {
-            //ignore
+
+            eventDispatcher.schedule(Master.this::onBranchCreated, 0, TimeUnit.MILLISECONDS);
         }
 
         @Override
@@ -182,7 +294,8 @@ public class Master {
 
         @Override
         public void handleDataChange() {
-            onBrachCommit();
+
+            eventDispatcher.schedule(Master.this::onBranchCommit, 0, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -207,7 +320,7 @@ public class Master {
 
         @Override
         public void handleDataChange() {
-            onViewChanged();
+            eventDispatcher.schedule(Master.this::onViewChanged, 0, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -219,23 +332,61 @@ public class Master {
 
         @Override
         public void handleCreation() {
-            onMasterChange();
+            eventDispatcher.schedule(Master.this::onMasterChange, 0, TimeUnit.MILLISECONDS);
         }
 
         @Override
         public void handleDeletion() {
-            reElect();
+            eventDispatcher.schedule(Master.this::reElect, 0, TimeUnit.MILLISECONDS);
         }
 
         @Override
         public void handleDataChange() {
-            onMasterChange();
+            eventDispatcher.schedule(Master.this::onMasterChange, 0, TimeUnit.MILLISECONDS);
         }
     }
 
+    public CompletableFuture<Void> schedule(Runnable task, int delayMS){
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        eventDispatcher.schedule(() -> {
+            innerRun(task, future);
+
+        }, delayMS, TimeUnit.MILLISECONDS);
+
+        return future;
+    }
+
+    private static void innerRun(Runnable task, CompletableFuture<Void> future){
+        try{
+            task.run();
+            future.complete(null);
+        }catch (Throwable th){
+            LOG.warn("task:{} execute failed for exception:{}", task.toString(), th.toString());
+            future.completeExceptionally(th);
+        }
+
+    }
+
+    public CompletableFuture<Void> scheduleAtFixedRate(Runnable task, int periodMS){
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        eventDispatcher.scheduleAtFixedRate(() -> {
+
+            innerRun(task, future);
+        },100, periodMS, TimeUnit.MILLISECONDS);
+
+        return future;
+    }
 
 
+    public <T> CompletableFuture<T> failAfter(int durationMS) {
+        final CompletableFuture<T> promise = new CompletableFuture<>();
+        schedule(() -> { final TimeoutException ex = new TimeoutException("Timeout after " + durationMS); promise.completeExceptionally(ex); }, durationMS);
+        return promise;
+    }
 
+    public <T> CompletableFuture<T> within(CompletableFuture<T> future, int durationMS) { final CompletableFuture<T> timeout = failAfter(durationMS); return future.applyToEither(timeout, Function.identity()); }
 
 
 }

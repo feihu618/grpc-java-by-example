@@ -3,17 +3,24 @@ package com.nebutown.cluster;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+
 public class Cluster {
     private static final Logger LOG = LoggerFactory.getLogger(Cluster.class);
-    private final DukerZKClient zkClient;
+    private static final Cluster INSTANCE = new Cluster();
 
 
-    public Cluster(DukerZKClient zkClient){
-        this.zkClient = zkClient;
+
+    public static Cluster getInstance() {
+        return INSTANCE;
     }
 
 
-    public void upgrade(Runnable task) {
+    void pause() {
+        throw new UnsupportedOperationException();
+    }
+
+    public void upgrade(List<Node> task) {
         //lock
         throw new UnsupportedOperationException();
     }

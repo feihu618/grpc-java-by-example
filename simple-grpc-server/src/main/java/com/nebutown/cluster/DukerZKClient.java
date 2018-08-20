@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -35,19 +37,36 @@ public class DukerZKClient {
         this.zkClient = zkClient;
         this.isSecure = isSecure;
     }
+
+    //for test
+    public <T> T tryExec(Callable<T> callable, int tryCount) {
+        try{
+
+            return callable.call();
+        } catch (Exception e) {
+            LOG.warn("--- tryExec", e);
+
+        }
+
+        if (tryCount > 0)
+            return tryExec(callable, tryCount - 1);
+        else
+            throw new IllegalStateException("--- exe max count");
+    }
     
 
     /**
-     * Create a sequential persistent path. That is, the znode will not be automatically deleted upon client's disconnect
+     * Create a sequential  path.
      * and a monotonically increasing number will be appended to its name.
      *
      * @param path the path to create (with the monotonically increasing number appended)
      * @param data the znode data
+*      @param mode the CreateMode mode
      * @return the created path (including the appended monotonically increasing number)
      */
-    public String createSequentialPersistentPath(String path, byte[] data) {
+    public String createSequentialPath(String path, byte[] data, CreateMode mode) {
 
-        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(path, data, acls(path), CreateMode.PERSISTENT_SEQUENTIAL, null);
+        ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(path, data, acls(path), mode, null);
         ZKClient.CreateResponse createResponse = (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
 
         return createResponse.getName();
@@ -62,15 +81,58 @@ public class DukerZKClient {
 
 
     /**
-     * Registers a given broker in zookeeper as the controller.
-     * @param controllerId the id of the broker that is to be registered as the controller.
+     * Registers a given broker in zookeeper as the master.
+     * @param masterId the id of the broker that is to be registered as the master.
      * @param timestamp the timestamp of the controller election.
      * @throws KeeperException if an error is returned by ZooKeeper.
      */
-    public void registerController(Integer controllerId, Long timestamp) throws KeeperException {
+    public void registerMaster(Integer masterId, Long timestamp) throws KeeperException {
         String path = ZKNode.MasterZNode.path();
-        checkedEphemeralCreate(path, ZKNode.MasterZNode.encode(controllerId, timestamp));
+        checkedEphemeralCreate(path, ZKNode.MasterZNode.encode(masterId, timestamp));
     }
+
+    public void createBranch(Integer epoch, List<Integer> nodeIds, Long timestamp) throws KeeperException {
+        ZKClient.CreateRequest createDataRequest = new ZKClient.CreateRequest(ZKNode.BranchesZNode.getDataPath(epoch), ZKNode.BranchesZNode.encode(nodeIds),
+                acls(ZKNode.BranchesZNode.getDataPath(epoch)), CreateMode.EPHEMERAL, null);
+
+        ZKClient.CreateRequest createBallotRequest = new ZKClient.CreateRequest(ZKNode.BranchesZNode.getBallotPath(epoch), new byte[0],
+                acls(ZKNode.BranchesZNode.getBallotPath(epoch)), CreateMode.PERSISTENT, null);
+
+        ZKClient.CreateRequest createCommitStatRequest = new ZKClient.CreateRequest(ZKNode.BranchesZNode.getCommitStatPath(epoch), ZKNode.BranchesZNode.encode(false),
+                acls(ZKNode.BranchesZNode.getCommitStatPath(epoch)), CreateMode.EPHEMERAL, null);
+
+
+        List<ZKClient.AsyncResponse> responses = handleRequests0(Lists.newArrayList(createDataRequest, createBallotRequest, createCommitStatRequest));
+
+        if (responses.stream()
+                .map(ZKClient.AsyncResponse::getResultCode)
+                .anyMatch(code -> code != OK))
+            for (ZKClient.AsyncResponse response : responses)
+                response.maybeThrow();
+
+    }
+
+    public ArrayList<Integer> getBranchData(Integer epoch) throws KeeperException {
+        return
+            getDataAndVersion(ZKNode.BranchesZNode.getDataPath(epoch))
+                    .map(tuple -> ZKNode.BranchesZNode.decode(tuple.getS()))
+                    .orElseThrow(() -> new IllegalStateException("Can't get data from branch" + epoch));
+    }
+
+    public void updateBranch(Integer epoch, Integer nodeId) throws KeeperException {
+
+        checkedEphemeralCreate(ZKNode.BranchesZNode.getBallotPath(epoch, nodeId), null);
+
+    }
+
+
+    public void commitBranch(Integer epoch) throws KeeperException {
+        ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(ZKNode.BranchesZNode.getCommitStatPath(epoch), ZKNode.BranchesZNode.encode(true), MatchAnyVersion, null);
+        final ZKClient.AsyncResponse response = retryRequestUntilConnected(setDataRequest);
+
+        //TODO: handle response
+    }
+
 
     public void updateBrokerInfo(Node.NodeInfo nodeInfo) {
         throw new UnsupportedOperationException();
@@ -79,22 +141,22 @@ public class DukerZKClient {
     
 
     /**
-     * Sets the controller epoch conditioned on the given epochZkVersion.
+     * Sets the master epoch conditioned on the given epochZkVersion.
      * @param epoch the epoch to set
      * @param epochZkVersion the expected version number of the epoch znode.
      * @return SetDataResponse
      */
-    public ZKClient.SetDataResponse setControllerEpochRaw(Integer epoch, Integer epochZkVersion) {
+    public ZKClient.SetDataResponse setMasterEpochRaw(Integer epoch, Integer epochZkVersion) {
         ZKClient.SetDataRequest setDataRequest = new ZKClient.SetDataRequest(ZKNode.EpochZNode.path(), ZKNode.EpochZNode.encode(epoch), epochZkVersion, null);
         return (ZKClient.SetDataResponse) retryRequestUntilConnected(setDataRequest);
     }
 
     /**
-     * Creates the controller epoch znode.
+     * Creates the master epoch znode.
      * @param epoch the epoch to set
      * @return CreateResponse
      */
-    public ZKClient.CreateResponse createControllerEpochRaw(Integer epoch) {
+    public ZKClient.CreateResponse createMasterEpochRaw(Integer epoch) {
         ZKClient.CreateRequest createRequest = new ZKClient.CreateRequest(ZKNode.EpochZNode.path(), ZKNode.EpochZNode.encode(epoch),
                 acls(ZKNode.EpochZNode.path()), CreateMode.PERSISTENT, null);
         return (ZKClient.CreateResponse) retryRequestUntilConnected(createRequest);
@@ -105,9 +167,9 @@ public class DukerZKClient {
      * Gets all brokers in the cluster.
      * @return sequence of brokers in the cluster.
      */
-    public List<Node> getAllBrokersInCluster() throws KeeperException {
+    public List<Node> getAllNodesInCluster(Supplier<ArrayList<Integer>> producer) throws KeeperException {
 
-        ArrayList<Integer> brokerIds = getSortedBrokerList();
+        ArrayList<Integer> brokerIds = producer.get();
         ArrayList<ZKClient.GetDataRequest> getDataRequests = brokerIds.stream().map(brokerId -> new ZKClient.GetDataRequest(ZKNode.NodesZNode.getPath(brokerId), brokerId)).collect(Collectors.toCollection(ArrayList::new));
         ArrayList<ZKClient.AsyncResponse> getDataResponses = retryRequestsUntilConnected(getDataRequests);
 
@@ -124,7 +186,7 @@ public class DukerZKClient {
 
         if(nodeList.size() == getDataRequests.size())
             return nodeList;
-        else
+        else//TODO:
             throw new IllegalStateException("--- try next");
     }
 
@@ -236,10 +298,10 @@ public class DukerZKClient {
 
 
     /**
-     * Gets the controller id.
-     * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
+     * Gets the master id.
+     * @return optional integer that is Some if the master znode exists and can be parsed and None otherwise.
      */
-    public Optional<Integer> getControllerId() {
+    public Optional<Integer> getMasterId() {
         ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.MasterZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
@@ -248,7 +310,7 @@ public class DukerZKClient {
             case NONODE:
                 return Optional.empty();
             default:
-                LOG.warn("--- getControllerId happen exception", getDataResponse.getResultException());
+                LOG.warn("--- getMasterId happen exception", getDataResponse.getResultException());
                 return Optional.empty();
         }
     }
@@ -256,17 +318,17 @@ public class DukerZKClient {
 
 
     /**
-     * Deletes the controller znode.
+     * Deletes the master znode.
      */
-    public void deleteController() {
+    public void deleteMaster() {
         throw new UnsupportedOperationException();
     }
 
     /**
-     * Gets the controller epoch.
-     * @return optional (Integer, Stat) that is Some if the controller epoch path exists and None otherwise.
+     * Gets the master epoch.
+     * @return optional (Integer, Stat) that is Some if the master epoch path exists and None otherwise.
      */
-    public Optional<Tuple<Integer, Stat>> getControllerEpoch() throws KeeperException {
+    public Optional<Tuple<Integer, Stat>> getMasterEpoch() throws KeeperException {
         ZKClient.GetDataRequest getDataRequest = new ZKClient.GetDataRequest(ZKNode.EpochZNode.path(), null);
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch(getDataResponse.getResultCode()) {
