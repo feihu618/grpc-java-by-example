@@ -58,11 +58,11 @@ public class DukerZKClientTest {
         } catch (KeeperException e) {
             e.printStackTrace();
         }
-        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
-        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
-        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "a".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
-        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "m".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
-        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getSeqIdPath(1), "b".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getBallotPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getBallotPath(1), new byte[0], CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getBallotPath(1), "a".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getBallotPath(1), "m".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
+        dukerZKClient.createSequentialPath(ZKNode.BranchesZNode.getBallotPath(1), "b".getBytes(), CreateMode.EPHEMERAL_SEQUENTIAL);
         try {
             Thread.currentThread().join(1000*60*5);
         } catch (InterruptedException e) {
