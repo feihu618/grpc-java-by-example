@@ -2,16 +2,15 @@ package com.nebutown.cluster;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class ZKNode {
-    private static final Logger LOG = LoggerFactory.getLogger(ZKNode.class);
 
     static class ClusterZNode{
         private static final String BASE_PATH = "/clusters";
@@ -78,7 +77,7 @@ public class ZKNode {
 
          static Node.NodeInfo decode(Integer nodeId, byte[] data) {
 
-            throw new UnsupportedOperationException();
+            return Json.fromJson(Node.NodeInfo.class, data);
         }
     }
 
@@ -96,11 +95,14 @@ public class ZKNode {
         }
 
          static byte[] encode(Integer masterId, Long timestamp) {
-            throw new UnsupportedOperationException();
+
+             return Json.toJsonAsBytes(ImmutableMap.of("version", 1, "master_id", masterId, "timestamp", timestamp));
         }
 
-         static int decode(byte[] data) {
-            throw new UnsupportedOperationException();
+         static Optional<Integer> decode(byte[] data) {
+            return Optional.ofNullable(data)
+                            .map(d -> Json.fromJson(new TypeReference<Map<String, Object>>() {}, d))
+                            .map(map -> (Integer) map.get("master_id"));
         }
     }
 
@@ -110,60 +112,68 @@ public class ZKNode {
 
          static String path() {
 
-             return ClusterZNode.path()+"/"+PATH;
+             return ClusterZNode.path()+PATH;
         }
 
          static byte[] encode(Integer epoch) {
-            throw new UnsupportedOperationException();
+            return epoch.toString().getBytes(Charsets.UTF_8);
         }
 
          static int decode(byte[] data) {
-            throw new UnsupportedOperationException();
+            return Integer.parseInt(new String(data, Charsets.UTF_8));
         }
     }
 
-    static class BranchesZNode{
+    static class BranchesZNode {
 
         static final String PATH = "/branches";
 
         static String path() {
 
-            return ClusterZNode.path()+PATH;
+            return ClusterZNode.path() + PATH;
         }
 
         static String getDataPath(Integer epoch) {
 
-            return path()+"/"+epoch+"_data";
+            return path() + "/" + epoch + "_data";
         }
 
-        static String getBallotPath(Integer epoch){
+        static String getBallotPath(Integer epoch) {
 
-            return path()+"/"+epoch+"_ballot";
+            return path() + "/" + epoch + "_ballot";
         }
 
-        static String getBallotPath(Integer epoch, Integer nodeId){
+        static String getBallotPath(Integer epoch, Integer nodeId) {
 
-            return getBallotPath(epoch)+"/"+nodeId;
+            return getBallotPath(epoch) + "/" + nodeId;
         }
 
 
-        static String getCommitStatPath(Integer epoch){
+        static String getCommitStatPath(Integer epoch) {
 
-            return path()+"/"+epoch+"_commit_stat";
+            return path() + "/" + epoch + "_commit_stat";
         }
-
 
 
         static byte[] encode(List<Integer> nodeIds) {
-            throw new UnsupportedOperationException();
+
+            return Json.toJsonAsBytes(nodeIds);
         }
 
         static ArrayList<Integer> decode(byte[] data) {
-            throw new UnsupportedOperationException();
+
+            return Json.fromJson(new TypeReference<ArrayList<Integer>>() {
+            }, data);
         }
 
-        public static byte[] encode(boolean status) {
-            throw new UnsupportedOperationException();
+        static byte[] encode(boolean status) {
+
+            return new byte[]{(byte) (status ? 1 : 0)};
+        }
+
+        static boolean decodeStatus(byte[] data) {
+
+            return data[0] == 1;
         }
     }
 }

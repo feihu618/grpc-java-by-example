@@ -13,7 +13,13 @@ import java.util.concurrent.*;
 import java.util.function.Function;
 
 public class Master {
+    static class MasterMovedException extends Exception{
+        MasterMovedException(String message) {
+            super(message);
+        }
+    }
     private static final Logger LOG = LoggerFactory.getLogger(Master.class);
+
     private final ScheduledExecutorService eventDispatcher;
     private DukerZKClient zkClient;
     private Node.NodeInfo nodeInfo;
@@ -24,6 +30,7 @@ public class Master {
     private ArrayList<Integer> nodeIds = null;
     private int activeControllerId;
     private int epoch;
+    private int epochZkVersion;
     private Config config;
 
     public Master(DukerZKClient dukerZKClient, Config config) {
@@ -31,6 +38,10 @@ public class Master {
         this.zkClient = dukerZKClient;
         this.config = config;
         this.nodeInfo = config.getNode();
+
+        this.masterChangeHandler = new MasterChangeHandler();
+        this.epochHandler = new EpochHandler();
+        this.branchCommitHandler = new BranchCommitHandler();
         this.activeControllerId = -1;
 
     }
@@ -50,22 +61,20 @@ public class Master {
 
             @Override
             public void afterInitializingSession() {
-                try {
-                    zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
-                    zkClient.registerZNodeChangeHandlerAndCheckExistence(epochHandler);
-                    zkClient.registerBroker(nodeInfo);
 
-                    elect();
-                } catch (KeeperException e) {
-                    e.printStackTrace();
-                    throw new RuntimeException("--- Can't register masterChangeHandler~", e);
-                }
+                reElect();
             }
         });
+
+        eventDispatcher.schedule(Master.this::onStartup, 0, TimeUnit.MILLISECONDS);
     }
 
     public void shutdown() {
-        throw new UnsupportedOperationException();
+        zkClient.close();
+        eventDispatcher.shutdown();
+        this.masterChangeHandler = null;
+        this.epochHandler = null;
+        this.branchCommitHandler = null;
     }
 
     public void elect() {
@@ -101,8 +110,13 @@ public class Master {
 
 
                 LOG.error("Error while electing or becoming controller on broker ${config.nodeId}", t);
-//                triggerControllerMove();
+                triggerMasterMove();
         }
+    }
+
+    private void triggerMasterMove() {
+        activeControllerId = -1;
+        //TODO: clear
     }
 
     public boolean isMaster() {
@@ -111,14 +125,31 @@ public class Master {
     }
 
     public void reElect() {
+        //TODO: clear
+        elect();
+    }
+
+    void onStartup() {
+        try {
+            zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
+
+            zkClient.registerZNodeChangeHandlerAndCheckExistence(epochHandler);
+            zkClient.registerBroker(nodeInfo);
+
+            elect();
+        } catch (KeeperException e) {
+            LOG.warn("--- onStartup happen KeeperException ", e);
+        } catch (Throwable t) {
+
+            LOG.warn("--- onStartup happen KeeperException ", t);
+        }
 
     }
 
     void onElectSuccess() {
         try {
 
-            List<Integer> childrenIds = zkClient.getSortedBrokerList();
-            Optional<Tuple<Integer, Stat>> epoch = zkClient.getMasterEpoch();
+            readControllerEpochFromZooKeeper();
 
             incrementMasterEpoch();
 
@@ -132,29 +163,93 @@ public class Master {
         }
     }
 
-    private void incrementMasterEpoch() throws KeeperException {
+    private void readControllerEpochFromZooKeeper() throws KeeperException {
+        // initialize the controller epoch and zk version by reading from zookeeper
+        Optional<Tuple<Integer, Stat>> epoch = zkClient.getMasterEpoch();
+        epoch.ifPresent(tuple -> {
 
-        //TODO: incrementMasterEpoch
+            Master.this.epoch = tuple.getS();
+            Master.this.epochZkVersion = tuple.getT().getVersion();
+
+            LOG.info("Initialized controller epoch to {} and zk version {}", tuple.getS(), tuple.getT().getVersion());
+        });
+    }
+
+    public static void printDebugInfo() {
+
+        System.out.println("Printing stack trace:");
+        StackTraceElement[] elements = Thread.currentThread().getStackTrace();
+        for (int i = 2; i < elements.length; i++) {
+            StackTraceElement s = elements[i];
+            System.out.println("\tat " + s.getClassName() + "." + s.getMethodName() + "(" + s.getFileName() + ":" + s.getLineNumber() + ")");
+        }
+    }
+
+    private void incrementMasterEpoch() throws Exception {
+
+        incrementMasterEpoch0();
         List<Integer> childrenIds = zkClient.getSortedBrokerList();
         createBranchAndCommit(childrenIds);
-        throw new UnsupportedOperationException();
+
+    }
+
+
+    private void incrementMasterEpoch0() throws Exception{
+        printDebugInfo();
+        int newControllerEpoch = epoch + 1;
+        ZKClient.SetDataResponse setDataResponse = zkClient.setMasterEpochRaw(newControllerEpoch, epochZkVersion);
+        switch (setDataResponse.getResultCode()){
+            case OK:
+                epochZkVersion = setDataResponse.stat.getVersion();
+                epoch = newControllerEpoch;
+                break;
+            case NONODE:
+                // if path doesn't exist, this is the first master whose epoch should be 1
+                // the following call can still fail if another master gets elected between checking if the path exists and
+                // trying to create the master epoch path
+                ZKClient.CreateResponse createResponse = zkClient.createMasterEpochRaw(1);
+                switch (createResponse.getResultCode()){
+                    case OK:
+                         epoch = 1;
+                         epochZkVersion = 1;
+                         break;
+                    case NODEEXISTS:
+                        throw new MasterMovedException("Master moved to another node. Aborting controller startup procedure");
+                    default:
+                        KeeperException exception = createResponse.getResultException();
+                        LOG.error("Error while incrementing controller epoch", exception);
+                        throw exception;
+            }
+            default:
+                throw new MasterMovedException("Master moved to another node. Aborting controller startup procedure");
+        }
+        LOG.info("Epoch incremented to {}", epoch);
     }
 
     private void createBranchAndCommit(List<Integer> childrenIds) throws KeeperException {
 
         zkClient.createBranch(epoch, childrenIds, System.currentTimeMillis());
 
+        zkClient.updateBranch(epoch, nodeInfo.getId());
+
         //poll count of children
         ballotCountFuture = scheduleAtFixedRate(()->{
 
-            int checkedSize = -1;
+            int checkedSize = 0;
+            try {
+                checkedSize = zkClient.getChildren(ZKNode.BranchesZNode.getBallotPath(epoch)).size();
+
+                LOG.info("--- checkedSize:{}", checkedSize);
+            } catch (KeeperException e) {
+                LOG.warn("--- getChildren on createBranchAndCommit happen exception", e);
+            }
             if (childrenIds.size() == checkedSize){
 
                 try {
 
                     zkClient.commitBranch(epoch);
                     if (ballotCountFuture != null)
-                        ballotCountFuture.cancel(false);
+                        ballotCountFuture.complete(null);
                 } catch (KeeperException e) {
 //                    e.printStackTrace();
                     LOG.warn("--- commitBranch happen exception:", e);
@@ -163,9 +258,9 @@ public class Master {
 
         }, 200);
 
-        within(ballotCountFuture, 1000*60).handle((v, th) -> {
+        within(ballotCountFuture, 1000*30).handle((v, th) -> {
 
-            if (th instanceof TimeoutException) {
+            if (th instanceof CompletionException) {
 
                 eventDispatcher.schedule(Master.this::onIncrementMasterEpochFailed, 50, TimeUnit.MILLISECONDS);
             }
@@ -177,9 +272,10 @@ public class Master {
 
     void onIncrementMasterEpochFailed() {
         try {
+
             incrementMasterEpoch();
-        } catch (KeeperException e) {
-//            e.printStackTrace();
+        } catch (Exception e) {
+
             LOG.warn("--- incrementMasterEpoch happen exception:", e);
         }
     }
@@ -187,7 +283,8 @@ public class Master {
     void onElectFail() {
 
         try {
-            Optional<Tuple<Integer, Stat>> epoch = zkClient.getMasterEpoch();
+
+            readControllerEpochFromZooKeeper();
             zkClient.registerZNodeChangeHandler(branchCommitHandler);//
         } catch (KeeperException e) {
             e.printStackTrace();
@@ -197,30 +294,40 @@ public class Master {
     void onMasterChange() {
         boolean wasMasterBeforeChange = isMaster();
         try {
+
             zkClient.registerZNodeChangeHandlerAndCheckExistence(masterChangeHandler);
+            activeControllerId = zkClient.getMasterId().orElse(-1);
+            if (wasMasterBeforeChange && !isMaster()) {
+                onMasterResignation();
+            }
         } catch (KeeperException e) {
             LOG.error("happen error when register handler:", e);
         }
-        activeControllerId = zkClient.getMasterId().orElse(-1);
-        if (wasMasterBeforeChange && !isMaster()) {
-            onMasterResignation();
-        }
+
     }
 
     void onNodeChange() {
 
         //TODO: performance
         try {
+
             incrementMasterEpoch();
-        } catch (KeeperException e) {
+        } catch (Exception e) {
             LOG.error("--- onNodeChange happen error when register handler:", e);
         }
     }
 
     void onViewChanged() {
-        //update epoch value
-        epoch = -2;
-        Cluster.getInstance().pause();
+
+        try {
+
+            readControllerEpochFromZooKeeper();
+            Cluster.getInstance().pause();
+        } catch (KeeperException e) {//if this node can't connect to cluster, frontend proxy should not pass any request to this node
+
+            LOG.error("--- onViewChanged happen error", e);
+        }
+
 
     }
 
@@ -243,6 +350,7 @@ public class Master {
         //notify Cluster upgrade finish
         try {
 
+
             List<Node> nodes = zkClient.getAllNodesInCluster(() -> nodeIds);
             Cluster.getInstance().upgrade(nodes);
 
@@ -255,7 +363,7 @@ public class Master {
     }
 
     private void onMasterResignation() {
-
+        //TODO: unregister handler and close schedule for master
     }
 
 
@@ -346,35 +454,16 @@ public class Master {
         }
     }
 
-    public CompletableFuture<Void> schedule(Runnable task, int delayMS){
-        CompletableFuture<Void> future = new CompletableFuture<>();
-
-        eventDispatcher.schedule(() -> {
-            innerRun(task, future);
-
-        }, delayMS, TimeUnit.MILLISECONDS);
-
-        return future;
-    }
-
-    private static void innerRun(Runnable task, CompletableFuture<Void> future){
-        try{
-            task.run();
-            future.complete(null);
-        }catch (Throwable th){
-            LOG.warn("task:{} execute failed for exception:{}", task.toString(), th.toString());
-            future.completeExceptionally(th);
-        }
-
-    }
 
     public CompletableFuture<Void> scheduleAtFixedRate(Runnable task, int periodMS){
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        eventDispatcher.scheduleAtFixedRate(() -> {
+        final ScheduledFuture<?> scheduledFuture = eventDispatcher.scheduleAtFixedRate(task::run, 100, periodMS, TimeUnit.MILLISECONDS);
 
-            innerRun(task, future);
-        },100, periodMS, TimeUnit.MILLISECONDS);
+        future.handle((v, t) -> {
+            scheduledFuture.cancel(false);
+            return null;
+        });
 
         return future;
     }
@@ -382,7 +471,7 @@ public class Master {
 
     public <T> CompletableFuture<T> failAfter(int durationMS) {
         final CompletableFuture<T> promise = new CompletableFuture<>();
-        schedule(() -> { final TimeoutException ex = new TimeoutException("Timeout after " + durationMS); promise.completeExceptionally(ex); }, durationMS);
+        eventDispatcher.schedule(() -> { final TimeoutException ex = new TimeoutException("Timeout after " + durationMS); promise.completeExceptionally(ex); }, durationMS, TimeUnit.MILLISECONDS);
         return promise;
     }
 

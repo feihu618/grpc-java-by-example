@@ -35,6 +35,14 @@ public class Json {
         return OBJECT_MAPPER.readValue(bytes, glass);
     }
 
+    public static byte[] toJsonAsBytes(Object obj)  {
+        try {
+            return OBJECT_MAPPER.writeValueAsBytes(obj);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static String toJson(Object value) {
         try{
 
@@ -48,6 +56,14 @@ public class Json {
 
 
     public static <T> T fromJson(Class<T> type, String data) {
+        try {
+            return OBJECT_MAPPER.readValue(data, type);
+        } catch (Exception e) {
+            throw new RuntimeException("Conversion from JSON failed", e);
+        }
+    }
+
+    public static <T> T fromJson(Class<T> type, byte[] data) {
         try {
             return OBJECT_MAPPER.readValue(data, type);
         } catch (Exception e) {

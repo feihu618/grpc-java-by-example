@@ -306,7 +306,7 @@ public class DukerZKClient {
         ZKClient.GetDataResponse getDataResponse = (ZKClient.GetDataResponse) retryRequestUntilConnected(getDataRequest);
         switch (getDataResponse.getResultCode()){
             case OK:
-                ZKNode.MasterZNode.decode(getDataResponse.getData());
+                return ZKNode.MasterZNode.decode(getDataResponse.getData());
             case NONODE:
                 return Optional.empty();
             default:
